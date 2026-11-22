@@ -265,9 +265,3 @@ export const SearchRecordSchema = z.object({
   avgScore: z.number().min(0).max(100).nullable(),
   scoredCount: z.number().int().min(0).max(10_000),
 });
-
-/** The whole store, as written in a backup. Entries are checked one at a time when read from storage. */
-export const IntelSchema = z.object({
-  history: z.array(SearchRecordSchema).max(500),
-  seen: z.array(SeenJobSchema).max(5000),
-});

@@ -148,7 +148,7 @@ function XLabels({ days }: { days: string[] }) {
   );
 }
 
-/** One column per day. Hover or focus a column to read its value. */
+/** One column per day. Hover a column to read its value; the table view has every day for keyboard and screen-reader users. */
 export function ColumnChart({ days, label, unit }: { days: { day: string; value: number }[]; label: string; unit: string }) {
   const [hot, setHot] = useState<number | null>(null);
   const top = niceMax(Math.max(0, ...days.map((d) => d.value)));
@@ -182,7 +182,7 @@ export function ColumnChart({ days, label, unit }: { days: { day: string; value:
   );
 }
 
-/** A line across days. A day with no value leaves a gap, never a made-up point. */
+/** A line across days. A day with no value leaves a gap, never a made-up point. Hover a point to read it; the table view has every day. */
 export function LineChart({ days, label, unit, domain = [0, 100] }: { days: { day: string; value: number | null }[]; label: string; unit: string; domain?: [number, number] }) {
   const [hot, setHot] = useState<number | null>(null);
   const [lo, hi] = domain;

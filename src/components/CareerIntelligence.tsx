@@ -18,7 +18,7 @@ interface Props {
 }
 
 const OBSERVED = "Observed: counted from jobs your searches returned.";
-const ESTIMATE = "Estimate: match scores are calculated by this app (and reviewed by Claude when it is set up), not stated by employers.";
+const ESTIMATE = "Estimate: match scores are calculated by this app (and reviewed by Claude when it is set up), not stated by employers. Each job keeps the score from the resume that was active when it was last searched.";
 
 const money = (n: number | null) => (n === null ? "None stated" : `$${Math.round(n / 1000)}k`);
 const dateLabel = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "");
@@ -142,8 +142,16 @@ export function CareerIntelligence({ intel, applications, skills, roles, hasResu
               </ChartFrame>
 
               <ChartFrame
-                title="Companies hiring for you"
-                subtitle={`Counts are observed; "relevant" is an estimate: jobs with a match score of ${RELEVANT_MIN} or more. Companies are not named when the posting does not list one.`}
+                title="Companies hiring for your target roles"
+                subtitle={`${OBSERVED} Postings whose title fits one of your target roles. Needs no resume. Companies are not counted when the posting does not name one.`}
+                table={{ head: ["Company", "Postings"], rows: data.roleCompanies.map((c) => [c.label, c.value]) }}
+              >
+                <BarList rows={data.roleCompanies} empty="No posting seen so far has a title that fits your target roles." />
+              </ChartFrame>
+
+              <ChartFrame
+                title="Companies with strong matches"
+                subtitle={`Counts are observed; "strong" is an estimate: jobs with a match score of ${RELEVANT_MIN} or more.`}
                 table={{ head: ["Company", "Relevant jobs", "Best match"], rows: data.companies.map((c) => [c.company, c.jobs, c.best]) }}
               >
                 <BarList rows={data.companies.map((c) => ({ label: c.company, value: c.jobs, note: `best ${c.best}` }))} empty="No scored job reached the relevance line yet." />
@@ -191,7 +199,7 @@ export function CareerIntelligence({ intel, applications, skills, roles, hasResu
             <div>
               <h2 className="font-display text-lg font-semibold">Role comparison</h2>
               <p className="mt-1 max-w-prose text-sm text-muted">
-                For each role you target, the jobs seen with a matching title. A job can count under more than one role (an Azure Data Engineer is also a Data Engineer). &quot;Suitable&quot; means a match score of {SUITABLE_MIN} or more, which is an estimate; the other figures are observed.
+                For each role you target, the jobs seen with a matching title. A role named with a level, such as Senior Data Analyst, counts only postings at that level; one without a level counts every level. A job can count under more than one role (an Azure Data Engineer is also a Data Engineer). &quot;Suitable&quot; means a match score of {SUITABLE_MIN} or more, which is an estimate; the other figures are observed.
               </p>
             </div>
             {data.roles.length === 0 ? (

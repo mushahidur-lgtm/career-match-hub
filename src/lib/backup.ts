@@ -2,7 +2,6 @@ import { z } from "zod";
 import type { IntelStore, ResumeVersion, SavedJob, SearchFilters, SearchPreferences } from "@/types/job";
 import {
   FiltersSchema,
-  IntelSchema,
   PreferencesSchema,
   ProfileSchema,
   ResumeSchema,
@@ -10,6 +9,7 @@ import {
   SavedJobsSchema,
 } from "./schemas";
 import { duplicateKey } from "./dedupe";
+import { readIntel } from "./history-load";
 import { LEGACY_VERSION_ID, nameFromFile } from "./storage";
 
 export const BACKUP_APP = "career-match-hub";
@@ -32,7 +32,8 @@ const DataV2 = z.object({
   filters: FiltersSchema,
   preferences: PreferencesSchema,
   saved: SavedJobsSchema,
-  intel: IntelSchema.optional(),
+  // Checked entry by entry afterwards, so one damaged history entry cannot reject the whole backup.
+  intel: z.unknown().optional(),
 });
 
 /** Backups made before resume versions existed held a single resume and profile. */
@@ -76,7 +77,10 @@ export function parseBackup(text: string): ParsedBackup {
   if (env.data.version >= 2) {
     // Versions 2 and 3 share a shape. Version 3 adds application fields; older status names are read as the new ones.
     const d = DataV2.safeParse(env.data.data);
-    return d.success ? { ok: true, data: d.data as AppData, exportedAt: env.data.exportedAt } : damaged(d.error.issues[0]);
+    if (!d.success) return damaged(d.error.issues[0]);
+    const { intel: rawIntel, ...rest } = d.data;
+    const intel = rawIntel === undefined ? undefined : readIntel(rawIntel)?.store;
+    return { ok: true, data: { ...(rest as Omit<AppData, "intel">), ...(intel ? { intel } : {}) }, exportedAt: env.data.exportedAt };
   }
 
   const d = DataV1.safeParse(env.data.data);

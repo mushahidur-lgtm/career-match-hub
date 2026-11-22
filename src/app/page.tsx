@@ -26,7 +26,7 @@ import { applicationsToCsv, jobsToCsv } from "@/lib/export";
 import { sortJobs } from "@/lib/format";
 import { profileSkills } from "@/lib/heuristics";
 import { newId, uniqueName } from "@/lib/ids";
-import { EMPTY_INTEL, clearHistory, clearSeen, mergeIntel, recordSearch, removeSearch } from "@/lib/history";
+import { EMPTY_INTEL, clearHistory, clearSeen, mergeIntel, recordSearch, removeSearch, shrinkIntel } from "@/lib/history";
 import { readIntel, stashIntel } from "@/lib/history-load";
 import { computeOverview } from "@/lib/overview";
 import { addSavedJob, findSaved, removeSavedJob, setSavedNotes, setSavedStatus, updateSavedJob } from "@/lib/saved";
@@ -89,7 +89,7 @@ export default function Home() {
   });
   // What your searches have shown you. Read entry by entry, like applications.
   const [intelSkipped, setIntelSkipped] = useState(0);
-  const [intel, setIntel] = usePersistentState<IntelStore>("cmh:intel", EMPTY_INTEL, (value) => {
+  const [intel, setIntel, , , intelLost] = usePersistentState<IntelStore>("cmh:intel", EMPTY_INTEL, (value) => {
     const r = readIntel(value);
     if (!r) return undefined;
     if (r.rejected.length) {
@@ -97,10 +97,10 @@ export default function Home() {
       setIntelSkipped(r.rejected.length);
     }
     return r.store;
-  });
+  }, shrinkIntel);
   const [sort, setSort] = usePersistentState<SortKey>("cmh:sort", "score");
   const [refine, setRefine] = usePersistentState<RefineFilters>("cmh:refine", DEFAULT_REFINE, check(RefineSchema));
-  const recovered = resumesLost || savedLost || skipped > 0 || intelSkipped > 0;
+  const recovered = resumesLost || savedLost || skipped > 0 || intelSkipped > 0 || intelLost;
 
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [loading, setLoading] = useState(false);

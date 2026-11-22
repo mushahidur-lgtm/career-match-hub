@@ -1,5 +1,5 @@
 import { wasSent } from "@/lib/applications";
-import { titleSimilarity } from "@/lib/matching/engine";
+import { titleLevel, titleSimilarity } from "@/lib/matching/engine";
 import { canonicalSkill } from "@/lib/skills";
 import { APPLICATION_STATUSES, type Application, type ApplicationStatus, type SearchRecord, type SeenJob } from "@/types/job";
 
@@ -58,7 +58,10 @@ export interface Intelligence {
   gaps: SkillRow[];
   /** Share of jobs whose text was cut short by the provider, which makes every skill count a minimum. */
   truncatedShare: number;
+  /** Companies with scored jobs at or above the relevance line. An estimate, and needs a resume. */
   companies: { company: string; jobs: number; best: number }[];
+  /** Companies with postings whose title fits one of your target roles. Observed, and needs no resume. */
+  roleCompanies: { label: string; value: number }[];
   relevantJobs: number;
   applicationsByStatus: Count[];
   funnel: { tracked: number; sent: number; interviewed: number; offers: number; enough: boolean; rate: number | null };
@@ -92,7 +95,7 @@ export function placeOf(location: string): string {
   if (GTA.has(lower)) return "Greater Toronto Area";
   if (["kanata", "nepean", "orleans", "barrhaven", "stittsville"].includes(lower)) return "Ottawa";
   if (/^(canada|ontario|on)$/.test(lower)) return "Canada (no city)";
-  return first.replace(/\b\w/g, (c) => c.toUpperCase());
+  return lower.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -136,6 +139,17 @@ const bandOf = (pay: { lo: number; hi: number }) => {
   const mid = (pay.lo + pay.hi) / 2;
   return BANDS.find(([, lo, hi]) => mid >= lo && mid < hi)![0];
 };
+
+/**
+ * Whether a posting's title fits one of your target roles. The kind of work must match; "Senior" and similar words are
+ * ignored by the title match itself, so the level is checked here: a role named with a level ("Senior Data Analyst")
+ * counts only postings at that level, and a role without one counts every level.
+ */
+export function roleMatches(title: string, role: string): boolean {
+  if (titleSimilarity(title, [role]) < 0.99) return false;
+  const want = titleLevel(role);
+  return want === null || titleLevel(title) === want;
+}
 
 const pct = (n: number, d: number) => (d ? Math.round((n / d) * 100) : 0);
 
@@ -203,15 +217,23 @@ export function computeIntelligence(input: IntelligenceInput): Intelligence {
     companyMap.set(k, c);
   }
 
+  const roleCompanyTally = tally(
+    jobs
+      .filter((j) => j.company.trim() && !/^company not listed$/i.test(j.company.trim()) && input.roles.some((r) => roleMatches(j.title, r)))
+      .map((j) => j.company.trim()),
+  );
+
   const apps = input.applications;
   const statusCounts = new Map<ApplicationStatus, number>(APPLICATION_STATUSES.map((s) => [s, 0]));
   for (const a of apps) statusCounts.set(a.status, statusCounts.get(a.status)! + 1);
-  const sent = apps.filter((a) => wasSent(a));
-  const interviewed = sent.filter((a) => a.status === "Interview" || a.status === "Offer" || (a.interviews ?? []).some((i) => i.status !== "Cancelled"));
+  // An application with a held interview went out even if its date was never recorded (for example one added straight at Interview, then withdrawn).
+  const held = (a: Application) => (a.interviews ?? []).some((i) => i.status !== "Cancelled");
+  const sent = apps.filter((a) => wasSent(a) || held(a));
+  const interviewed = sent.filter((a) => a.status === "Interview" || a.status === "Offer" || held(a));
   const offers = sent.filter((a) => a.status === "Offer" || Boolean(a.offer));
 
   const roles: RoleRow[] = input.roles.map((role) => {
-    const mine = jobs.filter((j) => titleSimilarity(j.title, [role]) >= 0.99);
+    const mine = jobs.filter((j) => roleMatches(j.title, role));
     const sc = mine.filter((j) => j.score !== null);
     const pay = mine.flatMap((j) => (j.pay ? [(j.pay.lo + j.pay.hi) / 2] : []));
     const stated = mine.filter((j) => j.workMode !== "Not stated");
@@ -249,6 +271,7 @@ export function computeIntelligence(input: IntelligenceInput): Intelligence {
     gaps: required.filter((s) => !s.have).slice(0, 10),
     truncatedShare: pct(jobs.filter((j) => j.truncated).length, jobs.length),
     companies: [...companyMap.values()].sort((a, b) => b.jobs - a.jobs || b.best - a.best).slice(0, 10),
+    roleCompanies: roleCompanyTally.slice(0, 10),
     relevantJobs: relevant.length,
     applicationsByStatus: APPLICATION_STATUSES.map((s) => ({ label: s, value: statusCounts.get(s)! })),
     funnel: {

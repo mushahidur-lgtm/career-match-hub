@@ -13,7 +13,7 @@ let migrationRan = false;
  * the raw value is kept under a "recovered" key (never overwritten silently) and `initial`
  * is used. Storage can be blocked or full, so every access is guarded.
  */
-export function usePersistentState<T>(key: string, initial: T, validate?: (value: unknown) => T | undefined) {
+export function usePersistentState<T>(key: string, initial: T, validate?: (value: unknown) => T | undefined, shrink?: (value: T) => T | null) {
   const [value, setValue] = useState<T>(initial);
   const [hydrated, setHydrated] = useState(false);
   const [recovered, setRecovered] = useState(false);
@@ -57,9 +57,12 @@ export function usePersistentState<T>(key: string, initial: T, validate?: (value
     try {
       window.localStorage.setItem(key, JSON.stringify(value));
     } catch {
-      /* storage full or blocked */
+      /* Storage full or blocked. Data that can be given up in part (search history) is cut down so it never crowds out what cannot. */
+      const smaller = shrink?.(value);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (smaller) setValue(smaller);
     }
-  }, [key, value, hydrated]);
+  }, [key, value, hydrated, shrink]);
 
   const reset = useCallback(() => setValue(initial), [initial]);
   return [value, setValue, hydrated, reset, recovered] as const;

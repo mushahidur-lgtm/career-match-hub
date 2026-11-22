@@ -5,8 +5,9 @@ import type { IntelStore, Job, ResumeVersion, SearchFilters, SearchRecord, Searc
 
 /** Browser storage is small, so old entries are dropped rather than the newest being refused. */
 export const HISTORY_MAX = 200;
-export const SEEN_MAX = 1200;
-const SKILLS_PER_JOB = 40;
+export const SEEN_MAX = 800;
+const REQUIRED_KEPT = 15;
+const PREFERRED_KEPT = 10;
 
 export const EMPTY_INTEL: IntelStore = { history: [], seen: [] };
 
@@ -43,8 +44,8 @@ function toSeen(job: Job, at: string, previous?: SeenJob): SeenJob {
     source: job.source,
     score: job.match ? job.match.score : null,
     confidence: job.match?.detail?.confidence ?? null,
-    required: req.required.slice(0, SKILLS_PER_JOB),
-    preferred: req.preferred.slice(0, SKILLS_PER_JOB),
+    required: req.required.slice(0, REQUIRED_KEPT),
+    preferred: req.preferred.slice(0, PREFERRED_KEPT),
     truncated: job.descriptionTruncated,
   };
 }
@@ -115,5 +116,17 @@ export function mergeIntel(current: IntelStore, incoming: IntelStore): IntelStor
   return {
     history: [...history.values()].sort((a, b) => b.at.localeCompare(a.at)).slice(0, HISTORY_MAX),
     seen: [...seen.values()].sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt)).slice(0, SEEN_MAX),
+  };
+}
+
+/**
+ * Used when browser storage is full: history gives way so the applications, which matter more, can still be saved.
+ * Keeps the newest half. Returns null once there is little left to give up.
+ */
+export function shrinkIntel(store: IntelStore): IntelStore | null {
+  if (store.seen.length < 20 && store.history.length < 5) return null;
+  return {
+    history: store.history.slice(0, Math.floor(store.history.length / 2)),
+    seen: [...store.seen].sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt)).slice(0, Math.floor(store.seen.length / 2)),
   };
 }

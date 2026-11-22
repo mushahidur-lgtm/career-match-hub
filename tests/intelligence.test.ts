@@ -220,3 +220,70 @@ describe("history in backups", () => {
     expect(without.ok && without.data.intel).toBeUndefined();
   });
 });
+
+describe("review fixes", () => {
+  it("a role named with a level counts only postings at that level; a role without one counts every level", async () => {
+    const { roleMatches } = await import("@/lib/intelligence");
+    expect(roleMatches("Data Analyst", "Senior Data Analyst")).toBe(false);
+    expect(roleMatches("Junior Data Analyst", "Senior Data Analyst")).toBe(false);
+    expect(roleMatches("Sr. Data Analyst", "Senior Data Analyst")).toBe(true);
+    expect(roleMatches("Senior Data Analyst", "Data Analyst")).toBe(true);
+    expect(roleMatches("Senior .NET Developer", "Senior .NET Developer")).toBe(true);
+    expect(roleMatches(".NET Developer", "Senior .NET Developer")).toBe(false);
+    expect(roleMatches("Cook", "Senior Data Analyst")).toBe(false);
+  });
+
+  it("keeps the senior and non-senior comparison rows apart", () => {
+    const s = search(EMPTY_INTEL, [makeJob({ id: "1", title: "Data Analyst" }), makeJob({ id: "2", title: "Senior Data Analyst", company: "B" })]);
+    const v = view(s, { roles: ["Data Analyst", "Senior Data Analyst"] });
+    expect(v.roles.map((r) => r.jobs)).toEqual([2, 1]);
+  });
+
+  it("an unreadable history entry in a backup does not reject the resumes and applications", async () => {
+    const { buildBackup, parseBackup } = await import("@/lib/backup");
+    const { DEFAULT_PREFERENCES } = await import("@/types/job");
+    const { makeSaved } = await import("./helpers");
+    const good = search(EMPTY_INTEL, [makeJob({ id: "a" })]);
+    const intel = { history: [...good.history, { broken: true }], seen: [...good.seen, { key: "x".repeat(900) }, good.seen[0]] } as unknown as IntelStore;
+    const text = buildBackup({ resumes: [], activeResumeId: null, filters: DEFAULT_FILTERS, preferences: DEFAULT_PREFERENCES, saved: [makeSaved(makeJob({ id: "z" }))], intel });
+    const r = parseBackup(text);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.data.saved).toHaveLength(1);
+      expect(r.data.intel?.seen).toHaveLength(1);
+      expect(r.data.intel?.history).toHaveLength(1);
+    }
+  });
+
+  it("a full store stays small, and shrinks by half when storage is full", async () => {
+    const { shrinkIntel } = await import("@/lib/history");
+    const skills = ["Python", "SQL", "Azure", "Azure Data Factory", "Airflow", "ETL", "Docker", "Kubernetes", "Power BI", "Spark", "Kafka", "Terraform", "Git", "AWS", "C#", ".NET", "Snowflake", "dbt", "Java", "React"];
+    const jobs = Array.from({ length: SEEN_MAX }, (_, i) =>
+      scored({ id: `j${i}`, title: `Senior Data Engineer ${i}`, company: `Company number ${i}`, location: "Ottawa, ON", description: `Requirements:\n${skills.join(", ")}\nNice to have:\nGo, Rust, Scala, Hive` }, 70),
+    );
+    let s = EMPTY_INTEL;
+    for (let k = 0; k < 4; k++) s = search(s, jobs.slice(k * 200, k * 200 + 200), at(1 + k));
+    for (let k = 0; k < 200; k++) s = search(s, [], at(10, k % 24));
+    const bytes = JSON.stringify(s).length;
+    expect(s.seen).toHaveLength(SEEN_MAX);
+    expect(bytes).toBeLessThan(650_000);
+    const half = shrinkIntel(s)!;
+    expect(half.seen).toHaveLength(SEEN_MAX / 2);
+    expect(half.history).toHaveLength(100);
+    expect(shrinkIntel({ history: [], seen: [] })).toBeNull();
+  });
+
+  it("lists companies by target-role title with no resume, and counts a held interview as sent", () => {
+    const s = search(EMPTY_INTEL, [makeJob({ id: "1", company: "Acme" }), makeJob({ id: "2", company: "Acme", location: "Toronto, ON" }), makeJob({ id: "3", title: "Cook", company: "Cafe" })]);
+    expect(view(s, { roles: ["Data Engineer"], profileSkills: [] }).roleCompanies).toEqual([{ label: "Acme", value: 2 }]);
+    const direct = createApplication(makeJob({ id: "w", company: "W" }), "Interview", now);
+    const withdrawn = moveApplication({ ...direct, interviews: [{ id: "i", at: null, stage: "Other", format: "Other", status: "Completed", interviewers: "", prepNotes: "", questionsToAsk: [], topicsToReview: [], feedback: "" }] }, "Withdrawn", now);
+    const f = view(EMPTY_INTEL, { applications: [withdrawn] }).funnel;
+    expect(f).toMatchObject({ sent: 1, interviewed: 1 });
+  });
+
+  it("writes the place with one capitalisation", () => {
+    expect(placeOf("OTTAWA, ON")).toBe("Ottawa");
+    expect(placeOf("ottawa")).toBe("Ottawa");
+  });
+});
