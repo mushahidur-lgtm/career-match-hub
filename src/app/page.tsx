@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { AppShell, normalizeTab, type Tab } from "@/components/AppShell";
 import { AccountPanel } from "@/components/AccountPanel";
+import { Watchlist, type WatchlistActions } from "@/components/Watchlist";
+import { WatchlistCard } from "@/components/WatchlistCard";
 import { ContactsContext, type ContactsApi } from "@/components/contacts/context";
 import { ContactDialog } from "@/components/contacts/ContactDialog";
 import { NetworkingCard } from "@/components/contacts/NetworkingCard";
@@ -45,6 +47,9 @@ import { nameFromFile } from "@/lib/storage";
 import { deleteContact, linkApplication, logActivity, markVerified, mergeContactStores, recordFind, removeActivity, saveContact, unlinkApplication, updateContact } from "@/lib/contacts/model";
 import { readContacts, stashContacts } from "@/lib/contacts/schema";
 import { retryFailedSaves, useUnsavedKeys } from "@/lib/storage-health";
+import { addSite, markChecked, mergeWatchlists, removeSite, updateSite } from "@/lib/watchlist/model";
+import { readWatchlist, stashWatchlist } from "@/lib/watchlist/schema";
+import { EMPTY_WATCHLIST, type WatchSite, type WatchlistStore } from "@/types/watchlist";
 import { EMPTY_CONTACTS, type ContactsStore } from "@/types/contacts";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import {
@@ -121,6 +126,17 @@ export default function Home() {
     }
     return r.store;
   });
+  // Career sites you check by hand, read entry by entry like applications.
+  const [watchSkipped, setWatchSkipped] = useState(0);
+  const [watchlist, setWatchlist, , , watchLost] = usePersistentState<WatchlistStore>("cmh:watchlist", EMPTY_WATCHLIST, (value) => {
+    const r = readWatchlist(value);
+    if (!r) return undefined;
+    if (r.rejected.length) {
+      stashWatchlist(r.rejected);
+      setWatchSkipped(r.rejected.length);
+    }
+    return r.store;
+  });
   const [sort, setSort] = usePersistentState<SortKey>("cmh:sort", "score");
   const [refine, setRefine] = usePersistentState<RefineFilters>("cmh:refine", DEFAULT_REFINE, check(RefineSchema));
   const unsaved = useUnsavedKeys();
@@ -131,7 +147,7 @@ export default function Home() {
     const t = setInterval(retryFailedSaves, 4000);
     return () => clearInterval(t);
   }, [stuck]);
-  const recovered = resumesLost || savedLost || skipped > 0 || intelSkipped > 0 || intelLost || contactsSkipped > 0 || contactsLost;
+  const recovered = resumesLost || savedLost || skipped > 0 || intelSkipped > 0 || intelLost || contactsSkipped > 0 || contactsLost || watchSkipped > 0 || watchLost;
 
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [loading, setLoading] = useState(false);
@@ -260,12 +276,12 @@ export default function Home() {
   const rereadProfile = (id: string, p: CandidateProfile) => setResumes((list) => list.map((r) => (r.id === id ? { ...r, profile: p } : r)));
 
   /* ----- backup ----- */
-  const appData: AppData = { resumes, activeResumeId: active?.id ?? null, filters, preferences, saved, intel, contacts };
+  const appData: AppData = { resumes, activeResumeId: active?.id ?? null, filters, preferences, saved, intel, contacts, watchlist };
 
   // What cloud sync watches. Search filters are left out on purpose: they change constantly and are per device.
   const syncData = useMemo<AppData>(
-    () => ({ resumes, activeResumeId: active?.id ?? null, filters: DEFAULT_FILTERS, preferences, saved, intel, contacts }),
-    [resumes, active, preferences, saved, intel, contacts],
+    () => ({ resumes, activeResumeId: active?.id ?? null, filters: DEFAULT_FILTERS, preferences, saved, intel, contacts, watchlist }),
+    [resumes, active, preferences, saved, intel, contacts, watchlist],
   );
   // Data arriving from the cloud. It never touches your search filters or your current results.
   const [cloudEpoch, setCloudEpoch] = useState(0);
@@ -281,6 +297,7 @@ export default function Home() {
     setIntel(d.intel ?? EMPTY_INTEL);
     // An older cloud copy has no contacts. Never let that wipe the ones on this device.
     if (d.contacts) setContacts(d.contacts);
+    if (d.watchlist) setWatchlist(d.watchlist);
   };
   const cloud = useCloud({ data: syncData, apply: applyCloud, updateIntel: setIntel, intel });
 
@@ -328,6 +345,28 @@ export default function Home() {
       applications: saved,
     };
   }, [contacts, setContacts, active, aiAvailable, status, getToken, saved, results]);
+  /* ----- career site watchlist ----- */
+  const [logSite, setLogSite] = useState<WatchSite | null>(null);
+  const watchRef = useRef(watchlist);
+  useEffect(() => {
+    watchRef.current = watchlist;
+  });
+  const watchActions = useMemo<WatchlistActions>(
+    () => ({
+      add: (input) => {
+        // Decided now, from the latest list, so the form can show the problem straight away.
+        const r = addSite(watchRef.current, input);
+        if (!r.ok) return r.error;
+        watchRef.current = r.store;
+        setWatchlist(r.store);
+        return null;
+      },
+      update: (id, patch) => setWatchlist((s) => updateSite(s, id, patch)),
+      remove: (id) => setWatchlist((s) => removeSite(s, id)),
+      markChecked: (id) => setWatchlist((s) => markChecked(s, id)),
+    }),
+    [setWatchlist],
+  );
   const finderJobs = useMemo(() => [...saved.map((a) => a.job), ...(results?.jobs ?? [])], [saved, results]);
   const importData = (d: AppData, mode: "merge" | "replace") => {
     if (mode === "merge") {
@@ -335,6 +374,7 @@ export default function Home() {
       setResumes((list) => mergeResumes(list, d.resumes));
       if (d.intel) setIntel((store) => mergeIntel(store, d.intel!));
       if (d.contacts) setContacts((store) => mergeContactStores(store, d.contacts!));
+      if (d.watchlist) setWatchlist((store) => mergeWatchlists(store, d.watchlist!));
       if (!active && d.resumes[0]) setActiveId(d.activeResumeId ?? d.resumes[0].id);
       return;
     }
@@ -346,6 +386,7 @@ export default function Home() {
     // A backup from before search history existed leaves the history you have now alone.
     if (d.intel) setIntel(d.intel);
     if (d.contacts) setContacts(d.contacts);
+    if (d.watchlist) setWatchlist(d.watchlist);
     setResults(null);
   };
   const savePreferences = (p: SearchPreferences) => {
@@ -393,6 +434,7 @@ export default function Home() {
           <Overview stats={stats} resumeName={active?.name ?? null} provider={provider} hasSearched={Boolean(results)} onOpenJob={setDetailJob} onOpenApplication={openApplication} onGo={setTab} extra={
               <>
                 {cloud.latestRun ? <DailyRunCard run={cloud.latestRun} /> : null}
+                <WatchlistCard store={watchlist} onGo={() => setTab("watchlist")} />
                 <NetworkingCard onGo={() => setTab("recruiters")} />
               </>
             }
@@ -534,6 +576,8 @@ export default function Home() {
               </section>
             )}
           </div>
+        ) : tab === "watchlist" ? (
+          <Watchlist store={watchlist} preferences={preferences} actions={watchActions} onLog={setLogSite} />
         ) : tab === "recruiters" ? (
           <RecruiterFinder jobs={finderJobs} />
         ) : tab === "intelligence" ? (
@@ -580,6 +624,18 @@ export default function Home() {
             setOpenApp(null);
           }}
           onClose={() => setOpenApp(null)}
+        />
+      )}
+      {logSite && (
+        <AddApplicationDialog
+          initial={{ company: logSite.category === "Crown corporation" || logSite.category === "Private company" ? logSite.name.replace(/ careers$/i, "") : "" }}
+          findExisting={(job) => findSaved(saved, job)}
+          onCreate={(job, st, appliedAt) => {
+            saveJob(job, st, appliedAt);
+            setOpenApp({ id: job.id, tab: "details" });
+          }}
+          onOpenExisting={(id) => setOpenApp({ id, tab: "details" })}
+          onClose={() => setLogSite(null)}
         />
       )}
       {adding && (

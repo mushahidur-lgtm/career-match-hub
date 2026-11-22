@@ -12,6 +12,7 @@ Upload your resume, see which jobs fit your skills, and track every application 
 - **Career intelligence.** Charts of what your own searches have shown you: new jobs found per day, average match score, where the jobs are, stated pay bands, remote versus hybrid versus on-site, the skills asked for most (and which you lack), the companies hiring for you, applications by status, how many applications reached an interview, and a comparison of your target roles (for example Data Engineer against BI Developer). Everything is counted from jobs your searches returned and applications you track. It is not the whole market, and the page says so. Each chart is labelled observed or estimate: match scores are the only estimates. Pay counts only what the employer stated in CAD. A conversion rate is withheld until you have sent 5 applications. Sample jobs from demo mode are left out unless you tick a box. Every chart has a table view.
 - **Search history.** Every search is kept in this browser (up to 500 searches and 1,500 jobs, no descriptions), so trends build over days and weeks. Run a search again, delete one, or forget everything. Searches made with no job source connected are not kept.
 - **Cloud sync and a morning run (optional).** Connect your own free Supabase project to sign in, keep your data in step across devices, and have a search run for you every day from 8:00 AM Toronto time. Off by default: without the keys the app is exactly the browser-only app described here. Sync never overwrites a copy it has not seen. The morning run uses rule-based scoring only, so it costs nothing beyond the job-board calls. Setup is below.
+- **Career site watchlist.** For government, crown corporation and company career sites that the job boards do not cover. Keep their addresses, choose how often to be reminded, mark each one checked when you have looked, and log a posting you find as an application. Nothing is scraped: the app never reads those sites. A few suggested addresses (Job Bank, the GC Jobs guidance page, Ontario's GOjobs, Canada Post's job portal) are one click to add; they were found through a web search and you should confirm each one opens the page you expect. For any other crown corporation, add the careers page yourself.
 - **HR & Recruiter Finder.** A Find recruiter button on every job (card, details and application) looks for the people publicly tied to hiring for it: names the posting itself states, plus an optional Claude web search. Every person comes with the source that names them and a verification status. Save contacts, track your networking with them (Discovered to Follow-up), schedule follow-ups, and get truthful message drafts. Nothing is ever sent for you. See "HR & Recruiter Finder" below.
 - **Reminders.** The Overview lists follow-ups due, upcoming interviews, application deadlines, expected replies and offer decision dates, from the dates you set. They appear in the app only; nothing is emailed yet.
 - **Honest about its data.** Jobs come only from a connected job board (Adzuna or JSearch). With no job-board key a deployed site shows no jobs and says so. `npm run dev` shows clearly labelled sample jobs for development only. Resume analysis falls back to a keyword engine when there is no Claude key.
@@ -250,6 +251,7 @@ src/
     InterviewTracker.tsx          Interviews across all applications
     CareerIntelligence.tsx        Charts and role comparison
     contacts/                     HR & Recruiter Finder page, dialogs and networking assistant
+    Watchlist.tsx, WatchlistCard.tsx  Career site watchlist page and Overview reminder
     SearchHistory.tsx             Past searches
     charts.tsx                    Bar, column and line charts with table views
     AddApplicationDialog.tsx      Add a job found elsewhere
@@ -264,6 +266,7 @@ src/
     overview.ts                   Overview numbers
     history.ts, history-load.ts   Recording searches and jobs seen; reading them back
     contacts/                     Recruiter contacts: model, evidence verifier, drafts, web search
+    watchlist/                    Career sites you check by hand: model, reminders, storage
     cloud/                        Optional Supabase sync, sign-in and the morning run
     intelligence.ts               Career intelligence figures, from observed data only
     refine.ts, dedupe.ts          Result filters and duplicate merging

@@ -1,11 +1,11 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { BriefcaseBusiness, CalendarClock, ChartColumn, ClipboardList, FileUser, History, LayoutDashboard, Radar, Settings, UsersRound, type LucideIcon } from "lucide-react";
+import { BriefcaseBusiness, CalendarClock, ChartColumn, ClipboardList, FileUser, History, LayoutDashboard, Radar, Settings, UsersRound, Eye, type LucideIcon } from "lucide-react";
 
-export type Tab = "overview" | "profile" | "discover" | "applications" | "interviews" | "recruiters" | "intelligence" | "history" | "settings";
+export type Tab = "overview" | "profile" | "discover" | "applications" | "interviews" | "watchlist" | "recruiters" | "intelligence" | "history" | "settings";
 
-export const TABS: Tab[] = ["overview", "profile", "discover", "applications", "interviews", "recruiters", "intelligence", "history", "settings"];
+export const TABS: Tab[] = ["overview", "profile", "discover", "applications", "interviews", "watchlist", "recruiters", "intelligence", "history", "settings"];
 
 /** Maps the tab names used before the sidebar existed onto the current ones. */
 export function normalizeTab(value: unknown): Tab | undefined {
@@ -20,6 +20,7 @@ const ITEMS: { id: Tab; label: string; icon: LucideIcon }[] = [
   { id: "discover", label: "Discover jobs", icon: Radar },
   { id: "applications", label: "My applications", icon: ClipboardList },
   { id: "interviews", label: "Interview tracker", icon: CalendarClock },
+  { id: "watchlist", label: "Career site watchlist", icon: Eye },
   { id: "recruiters", label: "HR & Recruiter Finder", icon: UsersRound },
   { id: "intelligence", label: "Career intelligence", icon: ChartColumn },
   { id: "history", label: "Search history", icon: History },

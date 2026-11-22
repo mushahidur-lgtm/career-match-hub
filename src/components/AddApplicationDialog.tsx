@@ -12,6 +12,8 @@ import { Notice, inputClass, primaryButton, secondaryButton } from "./ui";
 const SENT_STAGES: ApplicationStatus[] = ["Applied", "Interview", "Offer", "Rejected"];
 
 interface Props {
+  /** Pre-fills the form, for example from a career site on your watchlist. */
+  initial?: { company?: string; url?: string };
   /** Looks for a job you already track, so one posting never becomes two applications. */
   findExisting: (job: Job) => Application | undefined;
   /** `appliedAt` is given only for stages from Applied on; null means the date is not known. */
@@ -21,9 +23,9 @@ interface Props {
 }
 
 /** For a job you found somewhere other than a search, such as a referral or a company site. */
-export function AddApplicationDialog({ findExisting, onCreate, onOpenExisting, onClose }: Props) {
+export function AddApplicationDialog({ initial, findExisting, onCreate, onOpenExisting, onClose }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [form, setForm] = useState({ title: "", company: "", location: "", url: "", status: "Interested" as ApplicationStatus, appliedOn: "" });
+  const [form, setForm] = useState({ title: "", company: initial?.company ?? "", location: "", url: initial?.url ?? "", status: "Interested" as ApplicationStatus, appliedOn: "" });
   const [error, setError] = useState<string | null>(null);
   const [existing, setExisting] = useState<Application | null>(null);
 

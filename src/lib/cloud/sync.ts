@@ -2,6 +2,8 @@ import { mergeResumes, mergeSavedJobs, type AppData } from "@/lib/backup";
 import { mergeContactStores } from "@/lib/contacts/model";
 import { EMPTY_INTEL, mergeIntel } from "@/lib/history";
 import { EMPTY_CONTACTS } from "@/types/contacts";
+import { EMPTY_WATCHLIST } from "@/types/watchlist";
+import { mergeWatchlists } from "@/lib/watchlist/model";
 
 /**
  * Decisions for keeping two copies of your data in step. Nothing here touches storage or the network,
@@ -63,6 +65,7 @@ export function mergeAppData(local: AppData, cloud: AppData): AppData {
     saved: mergeSavedJobs(local.saved, cloud.saved),
     intel: mergeIntel(local.intel ?? EMPTY_INTEL, cloud.intel ?? EMPTY_INTEL),
     contacts: mergeContactStores(local.contacts ?? EMPTY_CONTACTS, cloud.contacts ?? EMPTY_CONTACTS),
+    watchlist: mergeWatchlists(local.watchlist ?? EMPTY_WATCHLIST, cloud.watchlist ?? EMPTY_WATCHLIST),
   };
 }
 
@@ -70,7 +73,7 @@ export function mergeAppData(local: AppData, cloud: AppData): AppData {
 export const forCloud = (d: AppData): AppData => (d.contacts ? { ...d, contacts: { ...d.contacts, finds: [] } } : d);
 
 export const isEmptyData = (d: AppData): boolean =>
-  d.resumes.length === 0 && d.saved.length === 0 && (d.intel?.history.length ?? 0) === 0 && (d.intel?.seen.length ?? 0) === 0 && (d.contacts?.contacts.length ?? 0) === 0 && (d.contacts?.deletedIds.length ?? 0) === 0;
+  d.resumes.length === 0 && d.saved.length === 0 && (d.intel?.history.length ?? 0) === 0 && (d.intel?.seen.length ?? 0) === 0 && (d.contacts?.contacts.length ?? 0) === 0 && (d.contacts?.deletedIds.length ?? 0) === 0 && (d.watchlist?.sites.length ?? 0) === 0 && (d.watchlist?.deletedIds.length ?? 0) === 0;
 
 /**
  * A short fingerprint of what is synced, so a change can be noticed. Order does not matter, and the search filters
@@ -88,6 +91,8 @@ export function hashData(d: AppData): string {
     // Saved contacts and deletions are synced. Cached lookups (finds) are not part of the fingerprint.
     contacts: by(d.contacts?.contacts ?? [], (c) => c.id),
     deleted: [...(d.contacts?.deletedIds ?? [])].sort(),
+    sites: by(d.watchlist?.sites ?? [], (s) => s.id),
+    deletedSites: [...(d.watchlist?.deletedIds ?? [])].sort(),
   });
   let h = 5381;
   for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
