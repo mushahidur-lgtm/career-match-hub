@@ -54,12 +54,12 @@ export function SaveControl({ job, saved, onSave, onStatus, onRemove }: { job: J
       <label className="sr-only" htmlFor={`status-${job.id}`}>
         Application status for {job.title}
       </label>
-      <select id={`status-${job.id}`} value={saved.status} onChange={(e) => onStatus(job.id, e.target.value as ApplicationStatus)} className={`${inputClass} w-auto py-1.5`}>
+      <select id={`status-${job.id}`} value={saved.status} onChange={(e) => onStatus(saved.job.id, e.target.value as ApplicationStatus)} className={`${inputClass} w-auto py-1.5`}>
         {APPLICATION_STATUSES.map((s) => (
           <option key={s}>{s}</option>
         ))}
       </select>
-      <button type="button" className="rounded-lg px-2 py-1.5 text-sm text-muted underline-offset-2 hover:text-danger hover:underline" onClick={() => onRemove(job.id)}>
+      <button type="button" className="rounded-lg px-2 py-1.5 text-sm text-muted underline-offset-2 hover:text-danger hover:underline" onClick={() => onRemove(saved.job.id)}>
         Remove
       </button>
     </div>

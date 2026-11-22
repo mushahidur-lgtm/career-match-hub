@@ -1,7 +1,5 @@
-import { profileSkills } from "@/lib/heuristics";
 import { verifyQuotes } from "@/lib/matching/engine";
 import { canonicalSkill, dedupe, extractSkills, flattenSkills } from "@/lib/skills";
-import type { CandidateProfile } from "@/types/job";
 
 /** What Claude suggests for one job, after checking. Everything here is safe to show. */
 export interface JobInsights {
@@ -33,11 +31,12 @@ const text = (s: string, n: number) => s.replace(/\s+/g, " ").trim().slice(0, n)
 const numbers = (s: string) => (s.match(/\d[\d,.]*\s*%?/g) ?? []).map((n) => n.replace(/[\s,]/g, ""));
 
 /**
- * A rewrite may sharpen how an existing line is worded. It may not add a skill you have not
- * claimed or a number that is not already in the line, because either would be an invented fact.
+ * A rewrite may sharpen how an existing line is worded. It may not add a skill the line did not
+ * already name, or a number that is not already in it. Attaching a tool to an accomplishment it was
+ * not part of would be an invented fact, even if you know that tool.
  */
-export function rewriteIsSafe(original: string, suggestion: string, profile: CandidateProfile): boolean {
-  const allowed = new Set([...profileSkills(profile.skills), ...flattenSkills(extractSkills(original))].map((s) => canonicalSkill(s).toLowerCase()));
+export function rewriteIsSafe(original: string, suggestion: string): boolean {
+  const allowed = new Set(flattenSkills(extractSkills(original)).map((s) => canonicalSkill(s).toLowerCase()));
   const introducedSkill = flattenSkills(extractSkills(suggestion)).some((s) => !allowed.has(canonicalSkill(s).toLowerCase()));
   if (introducedSkill) return false;
   const known = new Set(numbers(original));
@@ -45,10 +44,10 @@ export function rewriteIsSafe(original: string, suggestion: string, profile: Can
   return suggestion.trim().length >= 10 && suggestion.trim() !== original.trim();
 }
 
-export function verifyInsights(raw: RawInsights, resumeText: string, profile: CandidateProfile): JobInsights {
+export function verifyInsights(raw: RawInsights, resumeText: string): JobInsights {
   const rewrites = raw.rewrites
     .map((r) => ({ original: verifyQuotes([r.original], resumeText)[0] ?? "", suggestion: text(r.suggestion, 400), why: text(r.why, 250) }))
-    .filter((r) => r.original && rewriteIsSafe(r.original, r.suggestion, profile))
+    .filter((r) => r.original && rewriteIsSafe(r.original, r.suggestion))
     .slice(0, 5);
 
   const projects = raw.projects

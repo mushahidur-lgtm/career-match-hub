@@ -153,6 +153,16 @@ describe("duplicate prevention", () => {
   });
 
   it("jobKey ignores case and spacing", () => {
-    expect(jobKey({ title: "Data  Engineer", company: "ACME", location: "Ottawa, ON" })).toBe(jobKey({ title: "data engineer", company: "acme", location: "ottawa, on" }));
+    expect(jobKey({ id: "1", title: "Data  Engineer", company: "ACME", location: "Ottawa, ON" })).toBe(jobKey({ id: "2", title: "data engineer", company: "acme", location: "ottawa, on" }));
+  });
+
+  it("jobKey sees through board wording: company suffixes and title tags", () => {
+    expect(jobKey({ id: "1", title: "Data Engineer (Hybrid)", company: "Acme Inc.", location: "Ottawa, ON" })).toBe(jobKey({ id: "2", title: "Data Engineer", company: "Acme", location: "Ottawa, ON" }));
+  });
+
+  it("jobKey never joins two jobs whose employer is unknown", () => {
+    const a = { title: "Data Engineer", company: "Company not listed", location: "Ottawa, ON" };
+    expect(jobKey({ id: "1", ...a })).not.toBe(jobKey({ id: "2", ...a }));
+    expect(jobKey({ id: "1", ...a })).toBe(jobKey({ id: "1", ...a }));
   });
 });

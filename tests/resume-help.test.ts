@@ -133,24 +133,28 @@ describe("checking Claude's rewrites", () => {
   const original = "Cut nightly load time by 40% by rewriting Python jobs.";
 
   it("accepts a rewording that keeps every fact", () => {
-    expect(rewriteIsSafe(original, "Rewrote Python jobs to cut nightly load time by 40%.", profile)).toBe(true);
+    expect(rewriteIsSafe(original, "Rewrote Python jobs to cut nightly load time by 40%.")).toBe(true);
   });
   it("rejects a rewrite that adds a skill the candidate has not claimed", () => {
-    expect(rewriteIsSafe(original, "Cut nightly load time by 40% by rewriting Python jobs on Terraform-managed infrastructure.", profile)).toBe(false);
+    expect(rewriteIsSafe(original, "Cut nightly load time by 40% by rewriting Python jobs on Terraform-managed infrastructure.")).toBe(false);
   });
-  it("accepts a skill that is on the profile even if the original line did not name it", () => {
-    expect(rewriteIsSafe(original, "Cut nightly load time by 40% by rewriting Python jobs on Databricks.", profile)).toBe(true);
+  it("rejects a skill that is on the profile but was not in the original line", () => {
+    // Databricks is a real skill of the candidate, but attaching it to this accomplishment would invent a fact.
+    expect(rewriteIsSafe(original, "Cut nightly load time by 40% by rewriting Python jobs on Databricks.")).toBe(false);
+  });
+  it("accepts a skill the original line already names, in another spelling", () => {
+    expect(rewriteIsSafe("Built dashboards in PowerBI.", "Built Power BI dashboards.")).toBe(true);
   });
   it("rejects a new number, percentage or amount", () => {
-    expect(rewriteIsSafe(original, "Cut nightly load time by 65% by rewriting Python jobs.", profile)).toBe(false);
-    expect(rewriteIsSafe("Delivered Power BI dashboards.", "Delivered 25 Power BI dashboards.", profile)).toBe(false);
+    expect(rewriteIsSafe(original, "Cut nightly load time by 65% by rewriting Python jobs.")).toBe(false);
+    expect(rewriteIsSafe("Delivered Power BI dashboards.", "Delivered 25 Power BI dashboards.")).toBe(false);
   });
   it("accepts a placeholder instead of an invented figure", () => {
-    expect(rewriteIsSafe("Delivered Power BI dashboards.", "Delivered Power BI dashboards to [number] stakeholders.", profile)).toBe(true);
+    expect(rewriteIsSafe("Delivered Power BI dashboards.", "Delivered Power BI dashboards to [number] stakeholders.")).toBe(true);
   });
   it("rejects an unchanged or trivial rewrite", () => {
-    expect(rewriteIsSafe(original, original, profile)).toBe(false);
-    expect(rewriteIsSafe(original, "Ok.", profile)).toBe(false);
+    expect(rewriteIsSafe(original, original)).toBe(false);
+    expect(rewriteIsSafe(original, "Ok.")).toBe(false);
   });
 });
 
@@ -176,7 +180,7 @@ describe("checking everything Claude returns", () => {
       checklist: ["Lead with the pipeline line."],
     },
   };
-  const out = verifyInsights(raw, RESUME, profile);
+  const out = verifyInsights(raw, RESUME);
 
   it("keeps only rewrites of real lines that add no skill or number", () => {
     expect(out.rewrites).toHaveLength(1);

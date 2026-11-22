@@ -477,7 +477,7 @@ function ApplicationTab({
         <div className="flex flex-wrap items-center gap-3">
           <SaveControl job={job} saved={saved} onSave={onSave} onStatus={onStatus} onRemove={onRemove} />
           {saved?.status !== "Applied" && saved?.status !== "Interviewing" && saved?.status !== "Offer" && saved?.status !== "Rejected" && (
-            <button type="button" className={secondaryButton} onClick={() => (saved ? onStatus(job.id, "Applied") : onSave(job, "Applied"))}>
+            <button type="button" className={secondaryButton} onClick={() => (saved ? onStatus(saved.job.id, "Applied") : onSave(job, "Applied"))}>
               Mark as applied
             </button>
           )}
@@ -500,7 +500,7 @@ function ApplicationTab({
             <label htmlFor={`notes-${job.id}`} className="sr-only">
               Notes for {job.title}
             </label>
-            <textarea id={`notes-${job.id}`} value={saved.notes} onChange={(e) => onNotes(job.id, e.target.value)} rows={4} maxLength={2000} className={`${inputClass} resize-y`} placeholder="Recruiter name, follow-up date, what you sent" />
+            <textarea id={`notes-${job.id}`} value={saved.notes} onChange={(e) => onNotes(saved.job.id, e.target.value)} rows={4} maxLength={2000} className={`${inputClass} resize-y`} placeholder="Recruiter name, follow-up date, what you sent" />
           </>
         ) : (
           <Empty>Save this job to keep notes on it.</Empty>

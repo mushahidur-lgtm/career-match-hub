@@ -20,6 +20,7 @@ import { sortJobs } from "@/lib/format";
 import { profileSkills } from "@/lib/heuristics";
 import { newId, uniqueName } from "@/lib/ids";
 import { computeOverview } from "@/lib/overview";
+import { addSavedJob, findSaved, removeSavedJob, setSavedNotes, setSavedStatus } from "@/lib/saved";
 import { DEFAULT_REFINE, RefineSchema, refineJobs, type RefineFilters } from "@/lib/refine";
 import { FiltersSchema, PreferencesSchema, ResumeVersionsSchema, SavedJobsSchema } from "@/lib/schemas";
 import { fillStructure, lacksStructure } from "@/lib/resume-sections";
@@ -99,7 +100,6 @@ export default function Home() {
   const active = useMemo(() => resumes.find((r) => r.id === activeId) ?? resumes[0] ?? null, [resumes, activeId]);
   const profile: CandidateProfile | null = active?.profile ?? null;
 
-  const savedById = useMemo(() => new Map(saved.map((s) => [s.job.id, s])), [saved]);
   const savedByKey = useMemo(() => new Map(saved.map((s) => [jobKey(s.job), s])), [saved]);
   const statusOf = useCallback((job: Job) => savedByKey.get(jobKey(job))?.status ?? null, [savedByKey]);
   const refined = useMemo(() => (results ? refineJobs(results.jobs, refine, { statusOf }) : []), [results, refine, statusOf]);
@@ -153,15 +153,11 @@ export default function Home() {
   );
 
   /* ----- saved jobs ----- */
-  const saveJob = (job: Job, st: ApplicationStatus) => {
-    const now = new Date().toISOString();
-    setSaved((list) => (list.some((s) => s.job.id === job.id || jobKey(s.job) === jobKey(job)) ? list : [{ job, status: st, notes: "", savedAt: now, updatedAt: now }, ...list]));
-  };
-  const setJobStatus = (id: string, st: ApplicationStatus) =>
-    setSaved((list) => list.map((s) => (s.job.id === id ? { ...s, status: st, updatedAt: new Date().toISOString() } : s)));
-  const setJobNotes = (id: string, notes: string) =>
-    setSaved((list) => list.map((s) => (s.job.id === id ? { ...s, notes, updatedAt: new Date().toISOString() } : s)));
-  const removeJob = (id: string) => setSaved((list) => list.filter((s) => s.job.id !== id));
+  // `id` below is the tracked entry's own id. The cards and dialogs pass `saved.job.id`.
+  const saveJob = (job: Job, st: ApplicationStatus) => setSaved((list) => addSavedJob(list, job, st));
+  const setJobStatus = (id: string, st: ApplicationStatus) => setSaved((list) => setSavedStatus(list, id, st));
+  const setJobNotes = (id: string, notes: string) => setSaved((list) => setSavedNotes(list, id, notes));
+  const removeJob = (id: string) => setSaved((list) => removeSavedJob(list, id));
 
   /* ----- resume versions ----- */
   const addResume = (text: string, fileName: string | null, p: CandidateProfile) => {
@@ -343,7 +339,7 @@ export default function Home() {
                     <ul className="space-y-4">
                       {sorted.slice(0, shownCount).map((job) => (
                         <li key={job.id}>
-                          <JobCard job={job} saved={savedByKey.get(jobKey(job)) ?? savedById.get(job.id)} onSave={saveJob} onStatus={setJobStatus} onRemove={removeJob} />
+                          <JobCard job={job} saved={findSaved(saved, job)} onSave={saveJob} onStatus={setJobStatus} onRemove={removeJob} />
                         </li>
                       ))}
                     </ul>
@@ -372,7 +368,7 @@ export default function Home() {
       {detailJob && (
         <JobDetailDialog
           job={detailJob}
-          saved={saved.find((s) => s.job.id === detailJob.id || jobKey(s.job) === jobKey(detailJob))}
+          saved={findSaved(saved, detailJob)}
           onSave={saveJob}
           onStatus={setJobStatus}
           onRemove={removeJob}

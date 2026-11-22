@@ -8,6 +8,7 @@ import {
   ResumeVersionsSchema,
   SavedJobsSchema,
 } from "./schemas";
+import { duplicateKey } from "./dedupe";
 import { LEGACY_VERSION_ID, nameFromFile } from "./storage";
 
 export const BACKUP_APP = "career-match-hub";
@@ -87,9 +88,12 @@ export function parseBackup(text: string): ParsedBackup {
   };
 }
 
-/** Two postings are the same job when they share an id, or the same title, company and place. */
-export const jobKey = (j: Pick<SavedJob["job"], "title" | "company" | "location">) =>
-  `${j.title}|${j.company}|${j.location}`.toLowerCase().replace(/\s+/g, " ").trim();
+/**
+ * Identity of a posting. The same employer, title and city is the same job even when the board
+ * words it differently ("Acme Inc." and "Acme", "Data Engineer (Hybrid)" and "Data Engineer").
+ * A job whose employer is unknown is identified by its id alone, so unrelated jobs never collide.
+ */
+export const jobKey = (j: Pick<SavedJob["job"], "id" | "title" | "company" | "location">) => duplicateKey(j) ?? `id:${j.id}`;
 
 /**
  * Combines saved jobs from two sources without ever creating a duplicate application.
