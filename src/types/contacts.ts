@@ -34,6 +34,8 @@ export interface JobLink {
   jobTitle: string;
   company: string;
   relationship: ContactType;
+  /** True when a source ties this person to this particular posting, not just to the company. */
+  jobSpecific?: boolean;
   /** Where the job is, so contacts can be filtered by place. */
   location?: string;
   /** 0 to 100: how directly this person relates to this job, from the evidence. */
@@ -68,6 +70,8 @@ export interface Contact {
   title: string;
   company: string;
   department: string;
+  /** Where they are based, only when a source says so. */
+  location: string;
   /** Only ever a profile address that was a public search result. Never built from a name. */
   linkedinUrl: string | null;
   /** A short quote taken from a source, with where it came from. */
@@ -114,6 +118,15 @@ export interface FindRecord {
   candidates: Contact[];
   /** Why nothing was found or searched, in plain words. */
   note: string | null;
+  /** The searches that were run, so an empty result can say what was looked at. */
+  queries?: string[];
+  /** The sites whose pages were read. */
+  readHosts?: string[];
+  /** How many search passes were run ("Search more" adds one). */
+  passes?: number;
+  usage?: { searches: number; fetches: number; inputTokens: number; outputTokens: number };
+  /** Names suggested by the search that no source backed up, so the page can explain why nothing is shown. */
+  unsupported?: number;
 }
 
 export interface ContactsStore {
@@ -137,6 +150,9 @@ export const CONTACT_LIMITS = {
   title: 200,
   company: 200,
   department: 200,
+  location: 200,
+  queries: 12,
+  readHosts: 20,
   url: 2000,
   evidence: 400,
   bio: 400,

@@ -2,6 +2,7 @@ import { newId } from "@/lib/ids";
 import { todayLocal } from "@/lib/applications";
 import { normalizeCompany, normalizeTitle } from "@/lib/dedupe";
 import { CONTACT_LIMITS as L, type Contact } from "@/types/contacts";
+import { inferDepartments, jobCity } from "./departments";
 import { classifyType, emailBelongsTo, isLinkedInProfile, isSeniorHr, newContact, newSource, normName, relevanceFor, scoreEvidence } from "./model";
 
 /**
@@ -22,9 +23,17 @@ export interface Citation {
   citedText: string;
 }
 
+/** The full text of a page the search tool read. This is real page text, so a person named in it can be checked far more fully than from a short citation. */
+export interface FetchedPage {
+  url: string;
+  title: string;
+  text: string;
+}
+
 export interface WebEvidence {
   results: SearchResultInfo[];
   citations: Citation[];
+  pages?: FetchedPage[];
 }
 
 /** What the model claimed. Untrusted: each part is checked against the evidence. */
@@ -33,6 +42,7 @@ export interface RawCandidate {
   title?: string;
   company?: string;
   department?: string;
+  location?: string;
   linkedinUrl?: string;
   email?: string;
   phone?: string;
@@ -129,16 +139,30 @@ function ownedBy(line: string, name: string, at: number, others: string[], max =
   return true;
 }
 
+/** Page text kept per source. Enough for a team page, bounded so one huge page cannot swamp the rest. */
+const MAX_PAGE_CHARS = 80_000;
+
+/** Words that say someone is no longer in the role. Employment is never assumed to be current without support. */
+const PAST_SIGNAL = /\b(?:former|formerly|previously|ex-|left (?:the company|in)|until (?:19|20)\d\d|no longer|alumn|retired|was (?:a|the|an) )/i;
+
 const BAD_NAME = /\b(team|careers?|department|recruiting|recruitment|hr|human resources|talent acquisition|opportunit|hiring)\b/i;
 
 export function verifyCandidates(raw: RawCandidate[], ev: WebEvidence, job: JobContext, now = new Date()): { contacts: Contact[]; dropped: Dropped[] } {
   const resultByUrl = new Map(ev.results.map((r) => [urlKey(r.url), r]));
+  // A page the tool read was reached from a search result, so it is a legitimate source even if listed only as a page.
+  for (const p of ev.pages ?? []) if (!resultByUrl.has(urlKey(p.url))) resultByUrl.set(urlKey(p.url), { url: p.url, title: p.title });
   const poolByUrl = new Map<string, string>();
-  for (const r of ev.results) poolByUrl.set(urlKey(r.url), r.title);
+  for (const r of resultByUrl.values()) poolByUrl.set(urlKey(r.url), r.title);
+  for (const p of ev.pages ?? []) {
+    const k = urlKey(p.url);
+    poolByUrl.set(k, `${poolByUrl.get(k) ?? ""}\n${p.text.slice(0, MAX_PAGE_CHARS)}`);
+  }
   for (const c of ev.citations) {
     const k = urlKey(c.url);
     poolByUrl.set(k, `${poolByUrl.get(k) ?? ""}\n${c.citedText}`);
   }
+  const hints = inferDepartments({ title: job.jobTitle, category: "Other", description: "" });
+  const city = jobCity(job.location ?? "");
 
   const companyNorm = normalizeCompany(job.company);
   const companyKnown = Boolean(companyNorm) && !/^company not listed$/i.test(job.company.trim());
@@ -218,12 +242,22 @@ export function verifyCandidates(raw: RawCandidate[], ev: WebEvidence, job: JobC
     const linkedinUrl = li && linkedinConfirms ? li : null;
     if (c.linkedinUrl && !linkedinUrl) cautions.push("A profile link was suggested, but it was not a search result that matched this person at this employer, so it is left out.");
 
+    // Location and department are kept only if the passage says them. Employment is treated as current only if nothing says otherwise.
+    const nearFold = near.toLowerCase();
+    const wantLoc = squash(c.location ?? "");
+    const location = wantLoc && nearFold.includes(wantLoc.toLowerCase().split(",")[0].trim()) ? wantLoc.slice(0, L.location) : "";
+    const wantDept = squash(c.department ?? "");
+    const department = wantDept && nearFold.includes(wantDept.toLowerCase()) ? wantDept.slice(0, L.department) : "";
+    const past = per.some((p) => PAST_SIGNAL.test(p.near));
+    const locationMatch = Boolean(city) && (nearFold.includes(city) || location.toLowerCase().includes(city));
+
     const senior = isSeniorHr(titleShown || claimedTitle);
     const score = scoreEvidence({ nameInSource: true, companyInSource, roleInSource, jobSpecific, companyDomain, linkedinConfirms, distinctSources: hosts.size, senior });
     if (!score) {
       reject("The sources do not tie this person to the company or to a recruiting role.");
       continue;
     }
+    if (past) cautions.push("A source suggests they may no longer be in this role, so check before reaching out.");
     if (senior && !jobSpecific) cautions.push("A senior HR leader. Nothing found says they handle this posting.");
     if (!jobSpecific) cautions.push("No source names this job next to them, so check that they cover this role.");
 
@@ -258,17 +292,18 @@ export function verifyCandidates(raw: RawCandidate[], ev: WebEvidence, job: JobC
           name,
           title: titleShown,
           company: job.company,
-          department: squash(c.department ?? "").slice(0, L.department),
+          department,
+          location,
           linkedinUrl,
           bioQuote: quote ? { text: quote.text.slice(0, L.bio), url: quote.s.result.url } : null,
           businessEmail: email,
           businessPhone: phone,
           type,
-          status: score.status,
-          confidence: score.confidence,
+          status: past ? "Possible match" : score.status,
+          confidence: past ? Math.min(score.confidence, 40) : score.confidence,
           lastVerifiedAt: todayLocal(now),
           sources,
-          jobs: [{ jobKey: job.jobKey, jobTitle: job.jobTitle, company: job.company, location: job.location, relationship: type, relevance: relevanceFor({ type, title: titleShown, department: c.department ?? "", jobTitle: job.jobTitle, jobSpecific, senior }) }],
+          jobs: [{ jobKey: job.jobKey, jobTitle: job.jobTitle, company: job.company, location: job.location, relationship: type, jobSpecific, relevance: relevanceFor({ type, title: titleShown, department, jobTitle: job.jobTitle, jobSpecific, senior, locationMatch, departmentHints: hints }) }],
           origin: "found",
           aiNote: c.note ? squash(c.note).slice(0, L.aiNote) : null,
           cautions,

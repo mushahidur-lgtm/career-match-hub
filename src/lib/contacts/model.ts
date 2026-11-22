@@ -139,9 +139,12 @@ const TYPE_BASE: Record<ContactType, number> = { Recruiter: 60, "Talent Acquisit
 const tokens = (s: string) => new Set(s.toLowerCase().split(/[^a-z0-9+#.]+/).filter((t) => t.length > 2));
 
 /** How directly a person relates to one job: their role, whether the evidence names the job, and whether their area fits. */
-export function relevanceFor(input: { type: ContactType; title: string; department: string; jobTitle: string; jobSpecific: boolean; senior: boolean }): number {
+export function relevanceFor(input: { type: ContactType; title: string; department: string; jobTitle: string; jobSpecific: boolean; senior: boolean; locationMatch?: boolean; departmentHints?: string[] }): number {
   let score = TYPE_BASE[input.type];
   if (input.jobSpecific) score += 25;
+  // The team that would hire for this job, and being in the same place, both make a person more likely to be the right one.
+  if (input.departmentHints?.some((h) => `${input.department} ${input.title}`.toLowerCase().includes(h.toLowerCase()))) score += 8;
+  if (input.locationMatch) score += 5;
   const job = tokens(input.jobTitle);
   const area = tokens(`${input.department} ${input.title}`);
   if ([...job].some((t) => area.has(t) && !["engineer", "senior", "developer", "manager", "specialist", "analyst"].includes(t))) score += 10;
@@ -165,6 +168,7 @@ export function newContact(init: Partial<Contact> & Pick<Contact, "name" | "comp
     title,
     company: init.company,
     department: init.department ?? "",
+    location: init.location ?? "",
     linkedinUrl: init.linkedinUrl ?? null,
     bioQuote: init.bioQuote ?? null,
     businessEmail: init.businessEmail ?? null,
@@ -196,6 +200,7 @@ export function clampContact(c: Contact): Contact {
     title: cut(c.title, L.title),
     company: cut(c.company, L.company),
     department: cut(c.department, L.department),
+    location: cut(c.location, L.location),
     linkedinUrl: c.linkedinUrl ? cut(c.linkedinUrl, L.url) : null,
     bioQuote: c.bioQuote ? { text: cut(c.bioQuote.text, L.bio), url: cut(c.bioQuote.url, L.url) } : null,
     businessEmail: c.businessEmail ? cut(c.businessEmail, L.email) : null,
@@ -236,6 +241,7 @@ export function mergeFindings(existing: Contact, found: Contact, now = new Date(
     ...existing,
     title: existing.title || found.title,
     department: existing.department || found.department,
+    location: existing.location || found.location,
     linkedinUrl: existing.linkedinUrl ?? found.linkedinUrl,
     bioQuote: existing.bioQuote ?? found.bioQuote,
     businessEmail: existing.businessEmail ?? found.businessEmail,
@@ -469,4 +475,20 @@ export function emailBelongsTo(name: string, email: string): boolean {
   const last = (parts[parts.length - 1] ?? "").replace(/[^a-z]/g, "");
   if (!local || !first || !last) return false;
   return (last.length >= 3 && local.includes(last)) || (first.length >= 3 && local.includes(first)) || local === `${first[0]}${last}`;
+}
+
+/* ---------- how to describe a contact ---------- */
+
+/** High, medium or low, from the verification status. High needs a source tying them to this posting. */
+export const confidenceBand = (s: ContactStatus): "High" | "Medium" | "Low" => (s === "Verified" ? "High" : s === "Likely match" ? "Medium" : "Low");
+
+export type Relation = "Recruiter for this posting" | "Recruiter at this company" | "HR professional at this company" | "Potential hiring manager" | "Other contact";
+
+/** What this person is to this job, so a recruiter for the posting is never mistaken for a general HR executive. */
+export function relationFor(c: Pick<Contact, "type" | "jobs">, jobKey?: string): Relation {
+  const link = (jobKey ? c.jobs.find((j) => j.jobKey === jobKey) : undefined) ?? c.jobs[0];
+  if (c.type === "Recruiter" || c.type === "Talent Acquisition") return link?.jobSpecific ? "Recruiter for this posting" : "Recruiter at this company";
+  if (c.type === "Hiring Manager" || c.type === "Department Head") return "Potential hiring manager";
+  if (c.type === "HR Manager") return "HR professional at this company";
+  return "Other contact";
 }

@@ -10,13 +10,26 @@ vi.mock("@/lib/contacts/web-search", async () => {
 });
 vi.mock("@/lib/cloud/auth", () => ({ requireSignedIn: auth.requireSignedIn, signInEnforced: auth.signInEnforced }));
 
-import { POST } from "@/app/api/find-recruiter/route";
-import { parseCandidatesBlock, parseResponse } from "@/lib/contacts/web-search";
+import { POST, type FindRecruiterResponse, type StreamLine } from "@/app/api/find-recruiter/route";
+import { BLOCKED_FETCH_DOMAINS, mergeParsed, parseCandidatesBlock, parseResponse, userPrompt } from "@/lib/contacts/web-search";
 
 const call = (body: unknown, ip = "1.1.1.1") =>
   POST(new Request("http://x/api/find-recruiter", { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": ip }, body: JSON.stringify(body) }));
 
+/** A lookup answers as a stream of lines. Refusals answer with plain JSON. */
+async function lines(res: Response): Promise<StreamLine[]> {
+  return (await res.text()).split("\n").filter(Boolean).map((l) => JSON.parse(l) as StreamLine);
+}
+async function resultOf(res: Response): Promise<FindRecruiterResponse> {
+  const r = (await lines(res)).find((l) => l.type === "result");
+  if (!r || r.type !== "result") throw new Error("no result line");
+  return r.result;
+}
+
 const job = { jobKey: "senior data engineer|acme analytics|ottawa", title: "Senior Data Engineer", company: "Acme Analytics", location: "Ottawa, ON", applyUrl: "https://careers.acme.example/jobs/123", source: "adzuna" as const };
+const usage = { searches: 3, fetches: 1, inputTokens: 1000, outputTokens: 200 };
+const okParsed = (over: object = {}) => ({ searches: 0, fetches: 0, queries: [], readHosts: [], toolErrors: [], evidence: { results: [], citations: [], pages: [] }, raw: [], ...over });
+const ok = (parsed: object) => ({ ok: true, model: "m", parsed, usage });
 
 let ipCounter = 0;
 const nextIp = () => `10.0.0.${++ipCounter}`;
@@ -46,36 +59,81 @@ describe("reading a web search response", () => {
         { type: "web_search_result", url: "https://www.linkedin.com/in/jane-smith-ta", title: "Jane Smith - Talent Acquisition Partner - Acme | LinkedIn", encrypted_content: "y", page_age: null },
       ],
     },
+    { type: "server_tool_use", id: "f1", name: "web_fetch", input: { url: "https://careers.acme.example/team" }, caller: { type: "direct" } },
+    {
+      type: "web_fetch_tool_result",
+      tool_use_id: "f1",
+      caller: { type: "direct" },
+      content: { type: "web_fetch_result", url: "https://careers.acme.example/team", retrieved_at: null, content: { type: "document", title: "Our team", citations: null, source: { type: "text", media_type: "text/plain", data: "Jane Smith, Talent Acquisition Partner, Ottawa\nOmar Ali, HR Manager" } } },
+    },
     {
       type: "text",
       text: "Jane Smith is the Talent Acquisition Partner.\n",
       citations: [{ type: "web_search_result_location", url: "https://careers.acme.example/team", title: "Team", cited_text: "Jane Smith, Talent Acquisition Partner at Acme Analytics", encrypted_index: "i" }],
     },
-    { type: "text", text: "CANDIDATES\nJane Smith | Talent Acquisition Partner | | https://www.linkedin.com/in/jane-smith-ta | | | https://careers.acme.example/team, https://www.linkedin.com/in/jane-smith-ta | Recruits for data roles", citations: null },
+    { type: "text", text: "CANDIDATES\nJane Smith | Talent Acquisition Partner | Talent | Ottawa, ON | https://www.linkedin.com/in/jane-smith-ta | | | https://careers.acme.example/team, https://www.linkedin.com/in/jane-smith-ta | Recruits for data roles", citations: null },
   ]);
 
-  it("collects result addresses and titles, cited passages, the search count and the claimed candidates", () => {
+  it("collects results, the full text of pages that were read, cited passages, the searches run and the claimed people", () => {
     const p = parseResponse(content);
     expect(p.searches).toBe(1);
+    expect(p.fetches).toBe(1);
+    expect(p.queries).toEqual(["acme recruiter"]);
+    expect(p.readHosts).toEqual(["careers.acme.example"]);
     expect(p.evidence.results.map((r) => r.url)).toEqual(["https://careers.acme.example/team", "https://www.linkedin.com/in/jane-smith-ta"]);
-    expect(p.evidence.citations).toEqual([{ url: "https://careers.acme.example/team", citedText: "Jane Smith, Talent Acquisition Partner at Acme Analytics" }]);
+    expect(p.evidence.pages).toEqual([{ url: "https://careers.acme.example/team", title: "Our team", text: "Jane Smith, Talent Acquisition Partner, Ottawa\nOmar Ali, HR Manager" }]);
+    expect(p.evidence.citations).toHaveLength(1);
     expect(p.raw).toHaveLength(1);
-    expect(p.raw[0]).toMatchObject({ name: "Jane Smith", title: "Talent Acquisition Partner", note: "Recruits for data roles" });
+    expect(p.raw[0]).toMatchObject({ name: "Jane Smith", title: "Talent Acquisition Partner", department: "Talent", location: "Ottawa, ON", note: "Recruits for data roles" });
     expect(p.raw[0].sourceUrls).toHaveLength(2);
     expect(p.raw[0].email).toBeUndefined();
   });
 
-  it("reports a web search tool error instead of results", () => {
-    const p = parseResponse(blocks([{ type: "web_search_tool_result", tool_use_id: "s1", caller: { type: "direct" }, content: { type: "web_search_tool_result_error", error_code: "unavailable" } }]));
-    expect(p.toolErrors).toEqual(["unavailable"]);
-    expect(p.evidence.results).toEqual([]);
+  it("reports a tool error, from a search or a page read, instead of results", () => {
+    const search = parseResponse(blocks([{ type: "web_search_tool_result", tool_use_id: "s1", caller: { type: "direct" }, content: { type: "web_search_tool_result_error", error_code: "unavailable" } }]));
+    expect(search.toolErrors).toEqual(["unavailable"]);
+    expect(search.evidence.results).toEqual([]);
+    const fetch = parseResponse(blocks([{ type: "web_fetch_tool_result", tool_use_id: "f1", caller: { type: "direct" }, content: { type: "web_fetch_tool_result_error", error_code: "url_not_accessible" } }]));
+    expect(fetch.toolErrors).toEqual(["url_not_accessible"]);
+    expect(fetch.evidence.pages).toEqual([]);
   });
 
-  it("reads NONE, a missing block and list markers", () => {
+  it("ignores a PDF it cannot read as text, and reads NONE, a missing block, list markers and the older eight-column format", () => {
+    const pdf = parseResponse(blocks([{ type: "web_fetch_tool_result", tool_use_id: "f1", caller: { type: "direct" }, content: { type: "web_fetch_result", url: "https://a.example/x.pdf", retrieved_at: null, content: { type: "document", title: null, citations: null, source: { type: "base64", media_type: "application/pdf", data: "AAAA" } } } }]));
+    expect(pdf.evidence.pages).toEqual([]);
     expect(parseCandidatesBlock("Nothing found.\nCANDIDATES\nNONE")).toEqual([]);
     expect(parseCandidatesBlock("No block here")).toEqual([]);
     expect(parseCandidatesBlock("CANDIDATES\n- Jane Smith | Recruiter | | | | | https://a.example/x |")).toHaveLength(1);
+    expect(parseCandidatesBlock("CANDIDATES\nJane Smith | Recruiter | Data | | | | https://a.example/x | note")[0].location).toBeUndefined();
     expect(parseCandidatesBlock("CANDIDATES\n\n  \njust text without pipes")).toEqual([]);
+  });
+
+  it("combines the rounds of one search, which the API can pause and continue", () => {
+    const a = parseResponse(content);
+    const b = parseResponse(blocks([{ type: "server_tool_use", id: "s2", name: "web_search", input: { query: "acme hr manager" }, caller: { type: "direct" } }]));
+    const m = mergeParsed([a, b]);
+    expect(m.searches).toBe(2);
+    expect(m.queries).toEqual(["acme recruiter", "acme hr manager"]);
+    expect(m.evidence.pages).toHaveLength(1);
+  });
+});
+
+describe("the search plan", () => {
+  it("asks for the strategy in order, with the teams that would hire, and never lets LinkedIn be fetched", () => {
+    const p = userPrompt({ company: "Acme Analytics", jobTitle: "Senior Data Engineer", category: "Data and analytics", description: "Build pipelines", location: "Ottawa, ON", applyHost: "careers.acme.example" });
+    expect(p).toContain('"Acme Analytics" "Senior Data Engineer" recruiter');
+    expect(p).toContain('"Talent Acquisition"');
+    expect(p).toContain('"Technical Recruiter"');
+    expect(p).toContain('"HR Manager"');
+    expect(p).toContain('"Hiring Manager"');
+    expect(p).toMatch(/Teams that probably hire for this job: Data, Analytics, Engineering/);
+    expect(BLOCKED_FETCH_DOMAINS).toContain("linkedin.com");
+    expect(BLOCKED_FETCH_DOMAINS).toContain("www.linkedin.com");
+  });
+  it("a follow-up search names the people already found, so it looks for others", () => {
+    const p = userPrompt({ company: "Acme", jobTitle: "Data Engineer", category: "Other", description: "", location: "", applyHost: null, exclude: ["Jane Smith"], pass: 2 });
+    expect(p).toMatch(/already found[\s\S]*Jane Smith/);
+    expect(p).toMatch(/follow-up search/);
   });
 });
 
@@ -111,15 +169,15 @@ describe("the Find Recruiter route", () => {
     expect(search.searchWeb).not.toHaveBeenCalled();
     // Once sign-in is enforced, that is the protection, and no separate opt-in is needed.
     auth.signInEnforced.mockReturnValue(true);
-    search.searchWeb.mockResolvedValue({ ok: true, model: "m", parsed: { searches: 0, toolErrors: [], evidence: { results: [], citations: [] }, raw: [] } });
-    await call(job, nextIp());
+    search.searchWeb.mockResolvedValue(ok(okParsed()));
+    await (await call(job, nextIp())).text();
     expect(search.searchWeb).toHaveBeenCalledTimes(1);
   });
 
   it("refusals do not use up the visitor lookup limit", async () => {
     const ip = nextIp();
     for (let i = 0; i < 6; i++) await call({ ...job, source: "demo" }, ip);
-    search.searchWeb.mockResolvedValue({ ok: true, model: "m", parsed: { searches: 0, toolErrors: [], evidence: { results: [], citations: [] }, raw: [] } });
+    search.searchWeb.mockResolvedValue(ok(okParsed()));
     expect((await call(job, ip)).status).toBe(200);
   });
 
@@ -134,61 +192,89 @@ describe("the Find Recruiter route", () => {
     expect((await call({ title: "x" }, nextIp())).status).toBe(400);
   });
 
-  it("returns only people the sources back up, and says how many were left out", async () => {
-    search.searchWeb.mockResolvedValue({
-      ok: true,
-      model: "m",
-      parsed: {
-        searches: 2,
-        toolErrors: [],
-        evidence: {
-          results: [{ url: "https://careers.acme.example/team", title: "Team - Acme Analytics" }],
-          citations: [{ url: "https://careers.acme.example/team", citedText: "Jane Smith, Talent Acquisition Partner at Acme Analytics, hires Senior Data Engineer roles." }],
-        },
-        raw: [
-          { name: "Jane Smith", sourceUrls: ["https://careers.acme.example/team"] },
-          { name: "Robert Invented", title: "Recruiter", sourceUrls: ["https://careers.acme.example/team"] },
-        ],
-      },
+  it("streams progress while it works, then the verified result with what was searched and what it cost", async () => {
+    search.searchWeb.mockImplementation(async (_input: unknown, onProgress?: (m: string) => void) => {
+      onProgress?.("Searching: acme recruiter");
+      onProgress?.("Reading careers.acme.example");
+      return ok(
+        okParsed({
+          searches: 3,
+          fetches: 1,
+          queries: ["acme recruiter", "acme talent acquisition"],
+          readHosts: ["careers.acme.example"],
+          evidence: {
+            results: [{ url: "https://careers.acme.example/team", title: "Team - Acme Analytics" }],
+            citations: [],
+            pages: [{ url: "https://careers.acme.example/team", title: "Our team - Acme Analytics", text: "Jane Smith, Talent Acquisition Partner at Acme Analytics, Ottawa, hires Senior Data Engineer roles." }],
+          },
+          raw: [
+            { name: "Jane Smith", location: "Ottawa", sourceUrls: ["https://careers.acme.example/team"] },
+            { name: "Robert Invented", title: "Recruiter", sourceUrls: ["https://careers.acme.example/team"] },
+          ],
+        }),
+      );
     });
-    const body = await (await call(job, nextIp())).json();
-    expect(body.candidates.map((c: { name: string }) => c.name)).toEqual(["Jane Smith"]);
-    expect(body.candidates[0].status).toBe("Verified");
-    expect(body.note).toMatch(/1 possible contact was left out/);
-    expect(body.searches).toBe(2);
+    const res = await call(job, nextIp());
+    expect(res.headers.get("content-type")).toMatch(/ndjson/);
+    const all = await lines(res);
+    expect(all.filter((l) => l.type === "progress").map((l) => (l as { message: string }).message)).toEqual(expect.arrayContaining(["Searching: acme recruiter", "Reading careers.acme.example"]));
+    const r = (all.find((l) => l.type === "result") as { type: "result"; result: FindRecruiterResponse }).result;
+    expect(r.candidates.map((c) => c.name)).toEqual(["Jane Smith"]);
+    expect(r.candidates[0]).toMatchObject({ status: "Verified", location: "Ottawa" });
+    expect(r.candidates[0].jobs[0].jobSpecific).toBe(true);
+    expect(r.queries).toEqual(["acme recruiter", "acme talent acquisition"]);
+    expect(r.readHosts).toEqual(["careers.acme.example"]);
+    expect(r.usage).toEqual(usage);
+    expect(r.unsupported).toBe(1);
+    expect(r.reasons?.[0]).toMatch(/No source/);
+    expect(r.note).toMatch(/1 suggested name was left out/);
+    expect(typeof r.latencyMs).toBe("number");
   });
 
-  it("says no reliable contact was found when the search suggested nothing", async () => {
-    search.searchWeb.mockResolvedValue({ ok: true, model: "m", parsed: { searches: 1, toolErrors: [], evidence: { results: [], citations: [] }, raw: [] } });
-    const body = await (await call(job, nextIp())).json();
-    expect(body.candidates).toEqual([]);
-    expect(body.note).toBe("No reliable contact was found for this job.");
+  it("passes what is needed for a follow-up search, and works out nothing it was not given", async () => {
+    search.searchWeb.mockResolvedValue(ok(okParsed()));
+    await (await call({ ...job, exclude: ["Jane Smith"], pass: 2, category: "Data and analytics", description: "Pipelines" }, nextIp())).text();
+    expect(search.searchWeb.mock.calls[0][0]).toMatchObject({ company: "Acme Analytics", exclude: ["Jane Smith"], pass: 2, category: "Data and analytics" });
+  });
+
+  it("says no reliable contact was found when the pages name nobody", async () => {
+    search.searchWeb.mockResolvedValue(ok(okParsed({ searches: 4 })));
+    const r = await resultOf(await call(job, nextIp()));
+    expect(r.candidates).toEqual([]);
+    expect(r.note).toMatch(/No page that was found names a recruiter/);
   });
 
   it("does not show names the search made up when no page backs any of them", async () => {
-    search.searchWeb.mockResolvedValue({ ok: true, model: "m", parsed: { searches: 1, toolErrors: [], evidence: { results: [{ url: "https://a.example", title: "A" }], citations: [] }, raw: [{ name: "Made Up", sourceUrls: ["https://a.example"] }] } });
-    const body = await (await call(job, nextIp())).json();
-    expect(body.candidates).toEqual([]);
-    expect(body.note).toMatch(/no page backed them up/i);
+    search.searchWeb.mockResolvedValue(ok(okParsed({ searches: 1, evidence: { results: [{ url: "https://a.example", title: "A" }], citations: [], pages: [] }, raw: [{ name: "Made Up", sourceUrls: ["https://a.example"] }] })));
+    const r = await resultOf(await call(job, nextIp()));
+    expect(r.candidates).toEqual([]);
+    expect(r.note).toMatch(/no page backed them up/i);
   });
 
   it("reports a search failure and a web search outage as errors, not as an empty result", async () => {
     search.searchWeb.mockResolvedValue({ ok: false, message: "The search took too long or could not connect. Nothing was saved. Try again." });
-    const failed = await call(job, nextIp());
-    expect(failed.status).toBe(502);
-    expect((await failed.json()).error).toMatch(/took too long/);
+    const failed = (await lines(await call(job, nextIp()))).pop() as { type: string; error: string };
+    expect(failed).toMatchObject({ type: "error" });
+    expect(failed.error).toMatch(/took too long/);
 
-    search.searchWeb.mockResolvedValue({ ok: true, model: "m", parsed: { searches: 1, toolErrors: ["too_many_requests"], evidence: { results: [], citations: [] }, raw: [] } });
-    const outage = await call(job, nextIp());
-    expect(outage.status).toBe(502);
-    expect((await outage.json()).error).toMatch(/rate limited/i);
+    search.searchWeb.mockResolvedValue(ok(okParsed({ searches: 1, toolErrors: ["too_many_requests"] })));
+    const outage = (await lines(await call(job, nextIp()))).pop() as { type: string; error: string };
+    expect(outage.type).toBe("error");
+    expect(outage.error).toMatch(/rate limited/i);
+
+    search.searchWeb.mockRejectedValue(new Error("boom"));
+    expect(((await lines(await call(job, nextIp()))).pop() as { type: string }).type).toBe("error");
   });
 
   it("limits how often one visitor can run a lookup", async () => {
-    search.searchWeb.mockResolvedValue({ ok: true, model: "m", parsed: { searches: 0, toolErrors: [], evidence: { results: [], citations: [] }, raw: [] } });
+    search.searchWeb.mockResolvedValue(ok(okParsed()));
     const ip = nextIp();
     const statuses = [];
-    for (let i = 0; i < 5; i++) statuses.push((await call(job, ip)).status);
+    for (let i = 0; i < 5; i++) {
+      const res = await call(job, ip);
+      statuses.push(res.status);
+      await res.text();
+    }
     expect(statuses).toEqual([200, 200, 200, 429, 429]);
   });
 });

@@ -556,3 +556,86 @@ describe("whose email it is", () => {
     expect(emailBelongsTo("Jane Smith", "recruiting@acme.example")).toBe(false);
   });
 });
+
+/* ---------- full page text, location, current employment, and what a contact is to a job ---------- */
+
+import { buildQueryPlan, inferDepartments } from "@/lib/contacts/departments";
+import { confidenceBand, relationFor } from "@/lib/contacts/model";
+
+describe("evidence from a page that was read in full", () => {
+  const page = (text: string, url = "https://careers.acme.example/team") => ({ results: [{ url, title: "Our team - Acme Analytics" }], citations: [], pages: [{ url, title: "Our team - Acme Analytics", text }] });
+  const claim = (name: string, over: object = {}) => ({ name, sourceUrls: ["https://careers.acme.example/team"], ...over });
+
+  it("finds a person named only deep in a page, which a 150 character citation would have missed", () => {
+    const text = `${"Careers at Acme Analytics. ".repeat(40)}\nMeet the people hiring for data roles:\nPriya Nair - Senior Technical Recruiter, Ottawa. Priya recruits Senior Data Engineer candidates for Acme Analytics.\n${"More about benefits. ".repeat(40)}`;
+    const { contacts } = verifyCandidates([claim("Priya Nair", { location: "Ottawa" })], page(text), ctx, now);
+    expect(contacts).toHaveLength(1);
+    expect(contacts[0]).toMatchObject({ name: "Priya Nair", status: "Verified", location: "Ottawa", type: "Recruiter" });
+    expect(contacts[0].jobs[0].jobSpecific).toBe(true);
+  });
+
+  it("two people on one team page each get their own title, and a person who only recruits for the company is not tied to this posting", () => {
+    const text = "Jane Smith, Talent Acquisition Partner for Senior Data Engineer roles at Acme Analytics.\nOmar Ali, Technical Recruiter at Acme Analytics.\nSam Kim, HR Manager at Acme Analytics.";
+    const { contacts } = verifyCandidates([claim("Jane Smith"), claim("Omar Ali"), claim("Sam Kim")], page(text), ctx, now);
+    const by = (n: string) => contacts.find((c) => c.name === n)!;
+    expect(by("Jane Smith")).toMatchObject({ status: "Verified", type: "Talent Acquisition" });
+    expect(by("Omar Ali")).toMatchObject({ status: "Likely match", type: "Recruiter" });
+    expect(by("Sam Kim")).toMatchObject({ type: "HR Manager" });
+    expect(relationFor(by("Jane Smith"), ctx.jobKey)).toBe("Recruiter for this posting");
+    expect(relationFor(by("Omar Ali"), ctx.jobKey)).toBe("Recruiter at this company");
+    expect(relationFor(by("Sam Kim"), ctx.jobKey)).toBe("HR professional at this company");
+    expect(contacts[0].name).toBe("Jane Smith");
+    expect(confidenceBand(by("Jane Smith").status)).toBe("High");
+    expect(confidenceBand(by("Omar Ali").status)).toBe("Medium");
+  });
+
+  it("does not assume someone still works there when the page says they left", () => {
+    const { contacts } = verifyCandidates([claim("Jane Smith")], page("Jane Smith, former Talent Acquisition Partner at Acme Analytics, left in 2024."), ctx, now);
+    expect(contacts[0].status).toBe("Possible match");
+    expect(contacts[0].confidence).toBeLessThanOrEqual(40);
+    expect(contacts[0].cautions.join(" ")).toMatch(/may no longer be in this role/);
+  });
+
+  it("keeps a location or department only when the passage says it", () => {
+    const { contacts } = verifyCandidates([claim("Jane Smith", { location: "Vancouver", department: "Finance" })], page("Jane Smith, Talent Acquisition Partner at Acme Analytics, Ottawa."), ctx, now);
+    expect(contacts[0].location).toBe("");
+    expect(contacts[0].department).toBe("");
+  });
+
+  it("ranks a nearby recruiter on the right team above a distant one", () => {
+    const text = "Aiden Brooks, Talent Acquisition Partner at Acme Analytics, Vancouver.\nBella Chan, Talent Acquisition Partner for Data at Acme Analytics, Ottawa.";
+    const { contacts } = verifyCandidates([claim("Aiden Brooks", { location: "Vancouver" }), claim("Bella Chan", { location: "Ottawa", department: "Data" })], page(text), { ...ctx, location: "Ottawa, ON" }, now);
+    expect(contacts.map((c) => c.name)).toEqual(["Bella Chan", "Aiden Brooks"]);
+  });
+
+  it("never turns a page on a login-only site into a source: the fetch list blocks LinkedIn (see the search plan tests)", () => {
+    const { contacts } = verifyCandidates([claim("Jane Smith")], page("Jane Smith, Talent Acquisition Partner at Acme Analytics"), ctx, now);
+    expect(contacts[0].sources.every((s) => !/linkedin\.com\/.*[?&]/.test(s.url))).toBe(true);
+  });
+});
+
+describe("which team hires for a job", () => {
+  const dep = (title: string, category = "Other", description = "") => inferDepartments({ title, category: category as never, description });
+  it("maps common jobs to the teams that hire for them", () => {
+    expect(dep("Data Engineer")).toEqual(expect.arrayContaining(["Data", "Analytics", "Engineering"]));
+    expect(dep("Senior Software Developer")).toEqual(expect.arrayContaining(["Technology", "Software Engineering"]));
+    expect(dep("Financial Analyst")).toEqual(expect.arrayContaining(["Finance", "Accounting"]));
+    expect(dep("Business Analyst")).toEqual(expect.arrayContaining(["Business", "Digital Transformation"]));
+    expect(dep("Registered Nurse")).toEqual(expect.arrayContaining(["Clinical", "Healthcare"]));
+    expect(dep("Policy Advisor, Ministry of Health")).toEqual(expect.arrayContaining(["Policy", "Public Service"]));
+    expect(dep("Management Consultant")).toEqual(expect.arrayContaining(["Consulting"]));
+    expect(dep("Quokka Wrangler")).toEqual(["Technology"]);
+    expect(dep("Data Engineer").length).toBeLessThanOrEqual(4);
+  });
+  it("builds the eight searches the strategy calls for, without a department for an unknown job being invented", () => {
+    const plan = buildQueryPlan({ title: "Data Engineer", company: "Acme", category: "Data and analytics", description: "", location: "Ottawa, ON" });
+    expect(plan).toHaveLength(8);
+    expect(plan[0]).toBe('"Acme" "Data Engineer" recruiter');
+    expect(plan.join("\n")).toMatch(/Talent Acquisition/);
+    expect(plan.join("\n")).toMatch(/Technical Recruiter/);
+    expect(plan.join("\n")).toMatch(/HR Manager/);
+    expect(plan.join("\n")).toMatch(/Hiring Manager/);
+    expect(plan.join("\n")).toMatch(/careers/);
+    expect(plan.join("\n")).toMatch(/linkedin\.com\/in/);
+  });
+});

@@ -29,11 +29,11 @@ function getClient(): Anthropic {
 
 /**
  * A client for calls that bill per web search. It never retries: a retry would run, and charge for, the searches again.
- * The timeout leaves room inside a 90 second route limit.
+ * The timeout leaves room inside a 120 second route limit.
  */
 let searchClient: Anthropic | null = null;
 export function getSearchClient(): Anthropic {
-  searchClient ??= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY?.trim(), timeout: 75_000, maxRetries: 0 });
+  searchClient ??= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY?.trim(), timeout: 110_000, maxRetries: 0 });
   return searchClient;
 }
 

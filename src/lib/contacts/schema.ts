@@ -15,7 +15,7 @@ const str = (max: number) => z.string().max(max);
 const day = z.string().max(10);
 
 const SourceSchema = z.object({ id: str(80), url: str(L.url), type: z.enum(SOURCE_TYPES), evidence: str(L.evidence), discoveredAt: str(40) });
-const JobLinkSchema = z.object({ jobKey: str(500), jobTitle: str(200), company: str(L.company), relationship: z.enum(CONTACT_TYPES), location: str(200).optional(), relevance: z.number().min(0).max(100) });
+const JobLinkSchema = z.object({ jobKey: str(500), jobTitle: str(200), company: str(L.company), relationship: z.enum(CONTACT_TYPES), jobSpecific: z.boolean().optional(), location: str(200).optional(), relevance: z.number().min(0).max(100) });
 const ActivitySchema = z.object({ id: str(80), type: z.enum(ACTIVITY_TYPES), date: day, jobKey: str(500).nullable(), notes: str(L.activityNotes), nextFollowUp: day.nullable() });
 
 export const ContactSchema = z.object({
@@ -24,6 +24,7 @@ export const ContactSchema = z.object({
   title: str(L.title),
   company: str(L.company),
   department: str(L.department),
+  location: str(L.location).default(""),
   linkedinUrl: str(L.url).nullable(),
   bioQuote: z.object({ text: str(L.bio), url: str(L.url) }).nullable(),
   businessEmail: str(L.email).nullable(),
@@ -56,6 +57,11 @@ export const FindRecordSchema = z.object({
   searched: z.object({ posting: z.boolean(), web: z.boolean() }),
   candidates: z.array(ContactSchema).max(L.candidatesMax),
   note: str(500).nullable(),
+  queries: z.array(str(300)).max(L.queries).optional(),
+  readHosts: z.array(str(200)).max(L.readHosts).optional(),
+  passes: z.number().int().min(0).max(20).optional(),
+  usage: z.object({ searches: z.number(), fetches: z.number(), inputTokens: z.number(), outputTokens: z.number() }).optional(),
+  unsupported: z.number().int().min(0).max(1000).optional(),
 });
 
 /**
