@@ -1,4 +1,5 @@
 import type { CandidateProfile, Seniority, SkillSet } from "@/types/job";
+import { parseCertifications, parseEducation, parseWorkHistory, yearsFromHistory } from "@/lib/resume-sections";
 import { canonicalSkill, dedupe, extractSkills, flattenSkills } from "@/lib/skills";
 
 /* ---------- Resume analysis without an API key ---------- */
@@ -90,7 +91,8 @@ export function heuristicProfile(text: string): CandidateProfile {
   const skills = extractSkills(text);
   const all = flattenSkills(skills);
   const have = new Set(all.map((s) => s.toLowerCase()));
-  const years = estimateYears(text);
+  const workHistory = parseWorkHistory(text);
+  const years = estimateYears(text) ?? yearsFromHistory(workHistory);
   const seniority = detectSeniority(text, years);
 
   const ranked = ROLES.map((r) => {
@@ -101,7 +103,8 @@ export function heuristicProfile(text: string): CandidateProfile {
     .filter((x) => x.mentioned || x.hits >= 2)
     .sort((a, b) => b.score - a.score);
 
-  const detected = ranked.filter((x) => x.mentioned).map((x) => x.r.title).slice(0, 4);
+  // Titles the resume actually lists come first, then the roles its wording points to.
+  const detected = dedupe([...workHistory.map((w) => w.title).filter(Boolean), ...ranked.filter((x) => x.mentioned).map((x) => x.r.title)]).slice(0, 6);
   const top = ranked.slice(0, 7).map((x) => x.r.title);
   for (const filler of ["Business Analyst", "Data Analyst", "Software Developer", "Project Manager", "QA Automation Engineer"]) {
     if (top.length >= 5) break;
@@ -119,7 +122,18 @@ export function heuristicProfile(text: string): CandidateProfile {
       : "No technical skills were recognised, so add yours below before searching."
   }`;
 
-  return { summary, yearsOfExperience: years, seniority, skills, detectedRoles: detected, recommendedRoles: recommended, source: "heuristic" };
+  return {
+    summary,
+    yearsOfExperience: years,
+    seniority,
+    skills,
+    detectedRoles: detected,
+    recommendedRoles: recommended,
+    source: "heuristic",
+    workHistory,
+    education: parseEducation(text),
+    certifications: parseCertifications(text),
+  };
 }
 
 /* ---------- Skills helper ---------- */

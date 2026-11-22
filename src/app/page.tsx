@@ -1,38 +1,41 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bookmark, BriefcaseBusiness, FileUser, Radar, Settings } from "lucide-react";
-import type { z } from "zod";
-import { JobCard } from "@/components/JobCard";
-import { ResumeUploader } from "@/components/ResumeUploader";
+import { z } from "zod";
+import { AppShell, normalizeTab, type Tab } from "@/components/AppShell";
+import { JobCard, JobDetailDialog } from "@/components/JobCard";
+import { Overview } from "@/components/Overview";
+import { ResumeManager } from "@/components/ResumeManager";
 import { SavedJobsBoard } from "@/components/SavedJobsBoard";
 import { SearchFilters } from "@/components/SearchFilters";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { StatusBanner } from "@/components/StatusBanner";
 import { Notice, inputClass } from "@/components/ui";
-import { jobKey, mergeSavedJobs, type AppData } from "@/lib/backup";
+import { jobKey, mergeResumes, mergeSavedJobs, type AppData } from "@/lib/backup";
 import { sortJobs } from "@/lib/format";
-import { FiltersSchema, PreferencesSchema, ProfileSchema, ResumeSchema, SavedJobsSchema } from "@/lib/schemas";
 import { profileSkills } from "@/lib/heuristics";
+import { newId, uniqueName } from "@/lib/ids";
+import { computeOverview } from "@/lib/overview";
+import { FiltersSchema, PreferencesSchema, ResumeVersionsSchema, SavedJobsSchema } from "@/lib/schemas";
+import { fillStructure, lacksStructure } from "@/lib/resume-sections";
+import { nameFromFile } from "@/lib/storage";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import {
   DEFAULT_FILTERS,
   DEFAULT_PREFERENCES,
-  type SearchPreferences,
   type ApiError,
   type AppStatus,
   type ApplicationStatus,
   type CandidateProfile,
   type Job,
+  type ResumeVersion,
   type SavedJob,
   type SearchFilters as Filters,
+  type SearchPreferences,
   type SearchResponse,
   type SortKey,
   type StoredResults,
-  type StoredResume,
 } from "@/types/job";
-
-type Tab = "resume" | "search" | "saved" | "settings";
 
 /** Adapts a schema for usePersistentState: undefined marks stored data that does not fit. */
 const check =
@@ -43,23 +46,27 @@ const check =
   };
 
 /** Anything that changes a score. When it differs from the last search, the scores on screen are out of date. */
-const profileKeyOf = (p: CandidateProfile | null, prefs: SearchPreferences) =>
-  p ? JSON.stringify([p.seniority, p.yearsOfExperience, ...profileSkills(p.skills).sort(), prefs.locations, prefs.minSalary, prefs.weights ?? null]) : "";
+const scoreKeyOf = (v: ResumeVersion | null, prefs: SearchPreferences) => {
+  if (!v) return "";
+  const p = v.profile;
+  return JSON.stringify([v.id, v.text.length, p.seniority, p.yearsOfExperience, ...profileSkills(p.skills).sort(), prefs.locations, prefs.minSalary, prefs.primaryRoles, prefs.secondaryRoles, prefs.weights ?? null]);
+};
 
 export default function Home() {
-  const [tab, setTab, hydrated] = usePersistentState<Tab>("cmh:tab", "resume", (v) => (v === "resume" || v === "search" || v === "saved" || v === "settings" ? v : undefined));
-  const [resume, setResume, , , resumeLost] = usePersistentState<StoredResume | null>("cmh:resume", null, check(ResumeSchema.nullable()));
-  const [profile, setProfile, , , profileLost] = usePersistentState<CandidateProfile | null>("cmh:profile", null, check(ProfileSchema.nullable()));
+  const [tab, setTab, hydrated] = usePersistentState<Tab>("cmh:tab", "overview", normalizeTab);
+  const [resumes, setResumes, , , resumesLost] = usePersistentState<ResumeVersion[]>("cmh:resumes", [], check(ResumeVersionsSchema));
+  const [activeId, setActiveId] = usePersistentState<string | null>("cmh:activeResume", null, check(z.string().max(80).nullable()));
   const [filters, setFilters] = usePersistentState<Filters>("cmh:filters", DEFAULT_FILTERS, check(FiltersSchema));
   const [preferences, setPreferences] = usePersistentState<SearchPreferences>("cmh:preferences", DEFAULT_PREFERENCES, check(PreferencesSchema));
   const [results, setResults] = usePersistentState<StoredResults | null>("cmh:results", null);
   const [saved, setSaved, , , savedLost] = usePersistentState<SavedJob[]>("cmh:saved", [], check(SavedJobsSchema));
-  const recovered = resumeLost || profileLost || savedLost;
   const [sort, setSort] = usePersistentState<SortKey>("cmh:sort", "score");
+  const recovered = resumesLost || savedLost;
 
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [detailJob, setDetailJob] = useState<Job | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -72,9 +79,24 @@ export default function Home() {
     };
   }, []);
 
+  // Profiles saved before work history existed get it read from their stored resume text. Nothing else changes.
+  useEffect(() => {
+    if (!hydrated || !resumes.some((r) => lacksStructure(r.profile))) return;
+    setResumes((list) => list.map((r) => (lacksStructure(r.profile) ? { ...r, profile: fillStructure(r.profile, r.text) } : r)));
+  }, [hydrated, resumes, setResumes]);
+
+  // A new page starts at the top, not wherever the last one was scrolled to.
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [tab]);
+
+  const active = useMemo(() => resumes.find((r) => r.id === activeId) ?? resumes[0] ?? null, [resumes, activeId]);
+  const profile: CandidateProfile | null = active?.profile ?? null;
+
   const savedById = useMemo(() => new Map(saved.map((s) => [s.job.id, s])), [saved]);
   const sorted = useMemo(() => (results ? sortJobs(results.jobs, sort) : []), [results, sort]);
-  const stale = Boolean(results && profile && results.profileKey !== profileKeyOf(profile, preferences));
+  const stats = useMemo(() => computeOverview(results, saved), [results, saved]);
+  const stale = Boolean(results && active && results.profileKey !== scoreKeyOf(active, preferences));
 
   const search = useCallback(
     async (next?: Filters) => {
@@ -85,23 +107,24 @@ export default function Home() {
         const res = await fetch("/api/search-jobs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filters: f, profile, resumeText: resume?.text ?? null, preferences }),
+          body: JSON.stringify({ filters: f, profile: active?.profile ?? null, resumeText: active?.text ?? null, preferences }),
         });
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as Partial<ApiError> | null;
           throw new Error(body?.error || "The search failed. Try again.");
         }
         const data = (await res.json()) as SearchResponse;
-        setResults({ ...data, filters: f, searchedAt: new Date().toISOString(), profileKey: profileKeyOf(profile, preferences) });
+        setResults({ ...data, filters: f, searchedAt: new Date().toISOString(), profileKey: scoreKeyOf(active, preferences) });
       } catch (err) {
         setSearchError(err instanceof Error ? err.message : "The search failed. Try again.");
       } finally {
         setLoading(false);
       }
     },
-    [filters, profile, resume, preferences, setResults],
+    [filters, active, preferences, setResults],
   );
 
+  /* ----- saved jobs ----- */
   const saveJob = (job: Job, st: ApplicationStatus) => {
     const now = new Date().toISOString();
     setSaved((list) => (list.some((s) => s.job.id === job.id || jobKey(s.job) === jobKey(job)) ? list : [{ job, status: st, notes: "", savedAt: now, updatedAt: now }, ...list]));
@@ -112,14 +135,34 @@ export default function Home() {
     setSaved((list) => list.map((s) => (s.job.id === id ? { ...s, notes, updatedAt: new Date().toISOString() } : s)));
   const removeJob = (id: string) => setSaved((list) => list.filter((s) => s.job.id !== id));
 
-  const appData: AppData = { resume, profile, filters, preferences, saved };
+  /* ----- resume versions ----- */
+  const addResume = (text: string, fileName: string | null, p: CandidateProfile) => {
+    const id = newId();
+    setResumes((list) => {
+      const name = uniqueName(nameFromFile(fileName, `Resume ${list.length + 1}`), list.map((r) => r.name));
+      return [...list, { id, name, text, fileName, uploadedAt: new Date().toISOString(), profile: p }].slice(0, 20);
+    });
+    setActiveId(id);
+  };
+  const renameResume = (id: string, name: string) => setResumes((list) => list.map((r) => (r.id === id ? { ...r, name: uniqueName(name, list.filter((x) => x.id !== id).map((x) => x.name)) } : r)));
+  const deleteResume = (id: string) => {
+    setResumes((list) => list.filter((r) => r.id !== id));
+    if (active?.id === id) setActiveId(resumes.find((r) => r.id !== id)?.id ?? null);
+  };
+  const editProfile = (p: CandidateProfile) => active && setResumes((list) => list.map((r) => (r.id === active.id ? { ...r, profile: p } : r)));
+  const rereadProfile = (id: string, p: CandidateProfile) => setResumes((list) => list.map((r) => (r.id === id ? { ...r, profile: p } : r)));
+
+  /* ----- backup ----- */
+  const appData: AppData = { resumes, activeResumeId: active?.id ?? null, filters, preferences, saved };
   const importData = (d: AppData, mode: "merge" | "replace") => {
     if (mode === "merge") {
       setSaved((list) => mergeSavedJobs(list, d.saved));
+      setResumes((list) => mergeResumes(list, d.resumes));
+      if (!active && d.resumes[0]) setActiveId(d.activeResumeId ?? d.resumes[0].id);
       return;
     }
-    setResume(d.resume);
-    setProfile(d.profile);
+    setResumes(d.resumes);
+    setActiveId(d.activeResumeId ?? d.resumes[0]?.id ?? null);
     setFilters(d.filters);
     setPreferences(d.preferences);
     setSaved(mergeSavedJobs([], d.saved));
@@ -132,49 +175,13 @@ export default function Home() {
 
   const pickRole = (role: string) => {
     setFilters((f) => ({ ...f, query: role }));
-    setTab("search");
+    setTab("discover");
   };
 
-  const tabs: { id: Tab; label: string; icon: typeof FileUser; count?: number }[] = [
-    { id: "resume", label: "Resume", icon: FileUser },
-    { id: "search", label: "Job search", icon: Radar },
-    { id: "saved", label: "Saved jobs", icon: Bookmark, count: saved.length },
-    { id: "settings", label: "Settings", icon: Settings },
-  ];
+  const provider = results ? results.provider : status?.jobProvider;
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:py-10">
-      <header className="flex flex-col gap-4">
-        <div className="flex items-center gap-3">
-          <span className="grid size-10 place-items-center rounded-xl bg-brand text-on-brand">
-            <BriefcaseBusiness className="size-5" aria-hidden />
-          </span>
-          <div>
-            <h1 className="font-display text-2xl font-bold leading-none tracking-tight">Career Match Hub</h1>
-            <p className="mt-1 text-sm text-muted">Find jobs that fit your resume, then track every application.</p>
-          </div>
-        </div>
-        <StatusBanner status={status} results={results} />
-      </header>
-
-      <nav aria-label="Sections" className="-mx-1 flex gap-1 overflow-x-auto border-b border-line px-1">
-        {tabs.map(({ id, label, icon: Icon, count }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            aria-current={tab === id ? "page" : undefined}
-            className={`-mb-px inline-flex shrink-0 items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-semibold ${
-              tab === id ? "border-brand text-ink" : "border-transparent text-muted hover:text-ink"
-            }`}
-          >
-            <Icon className="size-4" aria-hidden />
-            {label}
-            {count ? <span className="rounded-full bg-surface-2 px-2 text-xs tabular-nums text-muted">{count}</span> : null}
-          </button>
-        ))}
-      </nav>
-
+    <AppShell tab={tab} onTab={setTab} counts={{ applications: saved.length }} status={<StatusBanner status={status} results={results} />}>
       {recovered && (
         <Notice tone="warn">
           Some saved data could not be read, so it was set aside instead of deleted.{" "}
@@ -185,32 +192,55 @@ export default function Home() {
       )}
 
       <main className="flex-1" aria-busy={!hydrated}>
-        {!hydrated ? null : tab === "resume" ? (
-          <ResumeUploader
-            resume={resume}
-            profile={profile}
-            onAnalyzed={(r, p) => {
-              setResume(r);
-              setProfile(p);
-            }}
-            onProfileChange={setProfile}
+        {!hydrated ? null : tab === "overview" ? (
+          <Overview stats={stats} resumeName={active?.name ?? null} provider={provider} hasSearched={Boolean(results)} onOpenJob={setDetailJob} onGo={setTab} />
+        ) : tab === "profile" ? (
+          <ResumeManager
+            versions={resumes}
+            active={active}
+            onAdd={addResume}
+            onSelect={setActiveId}
+            onRename={renameResume}
+            onDelete={deleteResume}
+            onProfileChange={editProfile}
+            onReread={rereadProfile}
             onPickRole={pickRole}
-            onClear={() => {
-              setResume(null);
-              setProfile(null);
-            }}
           />
-        ) : tab === "search" ? (
+        ) : tab === "discover" ? (
           <div className="space-y-5">
+            <div>
+              <h1 className="font-display text-2xl font-bold tracking-tight">Discover jobs</h1>
+              {resumes.length > 1 && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+                  <label htmlFor="match-resume" className="font-medium">
+                    Match against
+                  </label>
+                  <select id="match-resume" value={active?.id ?? ""} onChange={(e) => setActiveId(e.target.value)} className={`${inputClass} w-auto py-1.5`}>
+                    {resumes.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
             {!profile && (
               <Notice tone="info">
                 No resume yet, so jobs will not get match scores.{" "}
-                <button type="button" className="font-semibold underline" onClick={() => setTab("resume")}>
+                <button type="button" className="font-semibold underline" onClick={() => setTab("profile")}>
                   Add your resume
                 </button>
               </Notice>
             )}
-            <SearchFilters filters={filters} onChange={setFilters} onSearch={() => void search()} loading={loading} suggestions={[...new Set([...(profile?.recommendedRoles ?? []), ...preferences.primaryRoles, ...preferences.secondaryRoles])]} locations={preferences.locations} />
+            <SearchFilters
+              filters={filters}
+              onChange={setFilters}
+              onSearch={() => void search()}
+              loading={loading}
+              suggestions={[...new Set([...(profile?.recommendedRoles ?? []), ...preferences.primaryRoles, ...preferences.secondaryRoles])]}
+              locations={preferences.locations}
+            />
             {searchError && <Notice tone="error">{searchError}</Notice>}
             {results && (
               <section aria-label="Search results" className="space-y-4" aria-busy={loading}>
@@ -221,7 +251,7 @@ export default function Home() {
                     </h2>
                     <p className="text-sm text-muted">
                       {results.filters.query || "All roles"} in {results.filters.location}
-                      {results.scoring === "ai" || results.scoring === "mixed" ? ". Top matches scored by Claude." : results.scoring === "heuristic" ? ". Scored by keyword matching." : ""}
+                      {results.scoring === "ai" || results.scoring === "mixed" ? ". Top matches reviewed by Claude." : results.scoring === "heuristic" ? ". Scored by the rule-based engine." : ""}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
@@ -240,7 +270,14 @@ export default function Home() {
                     {w}
                   </Notice>
                 ))}
-                {stale && <Notice tone="info">Your skills changed after this search, so the scores are out of date. Search again to refresh them.</Notice>}
+                {stale && (
+                  <Notice tone="info">
+                    Your resume, skills or preferences changed after this search, so these scores are out of date.{" "}
+                    <button type="button" className="font-semibold underline" onClick={() => void search(results.filters)} disabled={loading}>
+                      {loading ? "Updating" : "Update scores"}
+                    </button>
+                  </Notice>
+                )}
                 {sorted.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-line px-6 py-12">
                     {results.mode === "unconfigured" ? (
@@ -270,13 +307,20 @@ export default function Home() {
         ) : tab === "settings" ? (
           <SettingsPanel data={appData} recovered={recovered} onSavePreferences={savePreferences} onImport={importData} />
         ) : (
-          <SavedJobsBoard items={saved} onStatus={setJobStatus} onNotes={setJobNotes} onRemove={removeJob} onGoSearch={() => setTab("search")} />
+          <SavedJobsBoard items={saved} onStatus={setJobStatus} onNotes={setJobNotes} onRemove={removeJob} onGoSearch={() => setTab("discover")} />
         )}
       </main>
 
-      <footer className="border-t border-line pt-4 text-xs text-muted">
-        Your resume, profile and saved jobs stay in this browser. Match scores are guidance, not a prediction of hiring decisions.
-      </footer>
-    </div>
+      {detailJob && (
+        <JobDetailDialog
+          job={detailJob}
+          saved={saved.find((s) => s.job.id === detailJob.id || jobKey(s.job) === jobKey(detailJob))}
+          onSave={saveJob}
+          onStatus={setJobStatus}
+          onRemove={removeJob}
+          onClose={() => setDetailJob(null)}
+        />
+      )}
+    </AppShell>
   );
 }

@@ -31,13 +31,7 @@ const typeTone = { "Full-time": "good", Contract: "warn", "Part-time": "neutral"
 
 export function JobCard({ job, saved, onSave, onStatus, onRemove }: Props) {
   const [open, setOpen] = useState(false);
-  const dialog = useRef<HTMLDialogElement>(null);
   const titleId = `job-${job.id}-title`;
-
-  useEffect(() => {
-    const el = dialog.current;
-    if (open && el && !el.open) el.showModal();
-  }, [open]);
 
   return (
     <article className="rounded-xl border border-line bg-surface p-4 sm:p-5" aria-labelledby={`${titleId}-card`}>
@@ -79,22 +73,35 @@ export function JobCard({ job, saved, onSave, onStatus, onRemove }: Props) {
         <SaveControl job={job} saved={saved} onSave={onSave} onStatus={onStatus} onRemove={onRemove} />
       </div>
 
-      {open && (
-        <dialog
-          ref={dialog}
-          aria-labelledby={titleId}
-          onClose={() => setOpen(false)}
-          onClick={(e) => {
-            if (e.target === dialog.current) dialog.current?.close();
-          }}
-          className="m-auto w-[min(46rem,calc(100vw-1.5rem))] max-h-[calc(100dvh-1.5rem)] overflow-y-auto rounded-2xl border border-line bg-surface p-0 text-ink"
-        >
-          <JobDetail job={job} titleId={titleId} onClose={() => dialog.current?.close()}>
-            <SaveControl job={job} saved={saved} onSave={onSave} onStatus={onStatus} onRemove={onRemove} />
-          </JobDetail>
-        </dialog>
-      )}
+      {open && <JobDetailDialog job={job} saved={saved} onSave={onSave} onStatus={onStatus} onRemove={onRemove} onClose={() => setOpen(false)} />}
     </article>
+  );
+}
+
+/** The full match analysis for one job. Used from the results list and from the Overview. */
+export function JobDetailDialog({ job, saved, onSave, onStatus, onRemove, onClose }: Props & { onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const titleId = `job-${job.id}-title`;
+
+  useEffect(() => {
+    const el = dialog.current;
+    if (el && !el.open) el.showModal();
+  }, []);
+
+  return (
+    <dialog
+      ref={dialog}
+      aria-labelledby={titleId}
+      onClose={onClose}
+      onClick={(e) => {
+        if (e.target === dialog.current) dialog.current?.close();
+      }}
+      className="m-auto w-[min(46rem,calc(100vw-1.5rem))] max-h-[calc(100dvh-1.5rem)] overflow-y-auto rounded-2xl border border-line bg-surface p-0 text-ink"
+    >
+      <JobDetail job={job} titleId={titleId} onClose={() => dialog.current?.close()}>
+        <SaveControl job={job} saved={saved} onSave={onSave} onStatus={onStatus} onRemove={onRemove} />
+      </JobDetail>
+    </dialog>
   );
 }
 

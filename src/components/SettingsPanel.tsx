@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Download, HardDriveDownload, Save, Upload } from "lucide-react";
 import { buildBackup, parseBackup, type AppData } from "@/lib/backup";
+import { clearSnapshots, hasSnapshots } from "@/lib/storage";
 import { normalizeWeights } from "@/lib/matching/engine";
 import {
   DEFAULT_MATCH_WEIGHTS,
@@ -39,6 +40,27 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport }: 
   const [importError, setImportError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const [snapshots, setSnapshots] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  useEffect(() => {
+    try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSnapshots(hasSnapshots(window.localStorage));
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
+
+  function deleteSnapshots() {
+    try {
+      clearSnapshots(window.localStorage);
+    } catch {
+      /* nothing to delete */
+    }
+    setSnapshots(false);
+    setConfirmClear(false);
+  }
 
   function save(e: FormEvent) {
     e.preventDefault();
@@ -168,8 +190,31 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport }: 
         </div>
         <p className="text-sm text-muted">
           {data.saved.length} saved {data.saved.length === 1 ? "job" : "jobs"}
-          {data.resume ? ", 1 resume" : ", no resume"}
+          {data.resumes.length ? `, ${data.resumes.length} resume ${data.resumes.length === 1 ? "version" : "versions"}` : ", no resume"}
         </p>
+        {snapshots && (
+          <div className="rounded-xl border border-line p-4 text-sm">
+            <p className="font-medium">Upgrade snapshots</p>
+            <p className="mt-1 max-w-prose text-muted">
+              Each upgrade saves a copy of your previous data in this browser, so a problem can be undone. The copies include your old resume text. Delete them once you are happy with the upgrade.
+            </p>
+            {confirmClear ? (
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <span>Delete the copies? This cannot be undone.</span>
+                <button type="button" className="font-semibold text-danger underline" onClick={deleteSnapshots}>
+                  Delete copies
+                </button>
+                <button type="button" className="text-muted underline" onClick={() => setConfirmClear(false)}>
+                  Keep them
+                </button>
+              </div>
+            ) : (
+              <button type="button" className={`${secondaryButton} mt-3`} onClick={() => setConfirmClear(true)}>
+                Delete upgrade snapshots
+              </button>
+            )}
+          </div>
+        )}
         {importError && <Notice tone="error">{importError}</Notice>}
         {done && <Notice tone="info">{done}</Notice>}
         {pending && (
@@ -179,7 +224,7 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport }: 
             </h3>
             <p className="text-sm text-muted">
               Contains {pending.data.saved.length} saved {pending.data.saved.length === 1 ? "job" : "jobs"}
-              {pending.data.resume ? " and a resume" : ""}. Merging keeps everything you have now and adds saved jobs you do not already track. Replacing overwrites your resume, profile, preferences and saved jobs.
+              {pending.data.resumes.length ? ` and ${pending.data.resumes.length} resume ${pending.data.resumes.length === 1 ? "version" : "versions"}` : ""}. Merging keeps everything you have now and adds saved jobs and resume versions you do not already have. Replacing overwrites your resumes, profiles, preferences and saved jobs.
             </p>
             <div className="flex flex-wrap gap-2">
               <button type="button" className={primaryButton} onClick={() => confirm("merge")}>

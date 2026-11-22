@@ -2,10 +2,11 @@
 
 Upload your resume, see which jobs fit your skills, and track every application in one place.
 
-- **Resume analyzer.** Drop in a PDF, DOCX, TXT or MD file, or paste the text. Claude extracts your experience, seniority, categorized skills and 5 to 8 job titles worth searching. You can fix any skill before searching.
-- **Job search.** Filter by title, city, category, work mode (Remote, Hybrid, On-site), employment type (Full-time, Contract, Part-time) and minimum salary.
+- **Resume versions and a real profile.** Keep several resumes (one per kind of role) and choose which one matching uses. Each is read into a profile you can edit: dated work history, education, certifications, skills, level and years of experience. Claude does the reading when a key is set, and a keyword parser does it otherwise. Anything Claude lists that the resume text does not contain is dropped, so the profile never claims experience you do not have.
+- **Overview.** Key numbers, best matches, newly posted jobs, highest salaries, applications that need attention and trending skills, all computed from your latest search and the jobs you track. Nothing on it is made up, and a number with no data behind it is left out.
+- **Discover jobs.** Filter by title, city, category, work mode (Remote, Hybrid, On-site), employment type (Full-time, Contract, Part-time) and minimum salary.
 - **Transparent match scoring.** Every job gets a 0 to 100 score built from six weighted parts you can inspect and re-weight, with required versus preferred skills, related skills, resume evidence, gaps, a confidence level and a plain explanation. 90 and above is green, 70 to 89 is blue, below 70 is amber.
-- **Tracker.** Save jobs, move them through Saved, Applied, Interviewing, Offer and Rejected, add notes, and export to CSV.
+- **My applications.** Save jobs, move them through Saved, Applied, Interviewing, Offer and Rejected, add notes, and export to CSV.
 - **Honest about its data.** Jobs come only from a connected job board (Adzuna or JSearch). With no job-board key a deployed site shows no jobs and says so. `npm run dev` shows clearly labelled sample jobs for development only. Resume analysis falls back to a keyword engine when there is no Claude key.
 - **Built for a permanent full-time search.** The default filter is Permanent full-time with a CAD $100,000 minimum. Jobs that state a lower salary are hidden, jobs that state none stay and are marked Salary unknown, and salaries a job board only estimated never hide a job. Edit your cities, roles and minimum in Settings.
 - **Your data stays yours.** Settings exports and imports a JSON backup. Existing data is snapshotted before any upgrade, and unreadable data is set aside rather than overwritten.
@@ -105,7 +106,8 @@ Scores are guidance about fit. They do not predict hiring decisions.
 
 ## Privacy
 
-- Your resume text, profile, filters, results and saved jobs live in your browser's `localStorage`. Nothing is stored on the server and there is no database.
+- Your resume versions, profiles, filters, results and saved jobs live in your browser's `localStorage`. Nothing is stored on the server and there is no database.
+- Upgrades save a snapshot of your previous data in the same browser storage so a problem can be undone. Those copies include your old resume text. Settings has a button to delete them once you are happy.
 - Uploaded files are parsed in memory on the server and discarded.
 - With `ANTHROPIC_API_KEY` set, your resume text and the job postings in view are sent to Anthropic for analysis and scoring.
 - Anyone who can open a deployed copy can use your API keys through it. Add a Vercel Firewall rate-limit rule, or Vercel Deployment Protection, if the site is public. The app has a small per-instance rate limit, but it resets whenever a serverless instance restarts.
@@ -151,7 +153,7 @@ Notes for Vercel:
 ```
 src/
   app/
-    page.tsx                      Dashboard: tabs, state, persistence
+    page.tsx                      Page coordination, state, persistence
     layout.tsx, globals.css       Fonts, color tokens, dark mode
     api/
       parse-resume/route.ts       PDF, DOCX, TXT and MD text extraction
@@ -159,14 +161,23 @@ src/
       search-jobs/route.ts        Provider search, filtering, AI match scoring
       status/route.ts             Which features are live (no key values)
   components/
-    ResumeUploader.tsx            Upload, paste, editable skill tags, role pills
+    AppShell.tsx                  Sidebar navigation (top bar on phones)
+    Overview.tsx                  Overview page
+    ResumeManager.tsx             Resume versions, upload, profile editor
+    MatchBreakdown.tsx            Score breakdown shown in the job dialog
+    SettingsPanel.tsx             Preferences, match weights, backup and restore
     SearchFilters.tsx             City, role, work mode, employment type, salary
     JobCard.tsx                   Job card and match analysis dialog
     SavedJobsBoard.tsx            Tracker, notes, CSV export
     StatusBanner.tsx, ui.tsx      Live/Demo banner and shared pieces
   lib/
     anthropic.ts                  Claude client, structured output, model failover
-    heuristics.ts, skills.ts      Keyword analysis and scoring
+    matching/                     Weighted scoring engine and requirement parser
+    resume-sections.ts            Work history, education and certification parsing
+    ai-profile.ts                 Turns Claude's reading into a verified profile
+    overview.ts                   Overview numbers
+    storage.ts, backup.ts         Versioned storage, migrations, backup and import
+    heuristics.ts, skills.ts      Keyword profile and the skills dictionary
     providers/                    adzuna.ts, jsearch.ts, demo.ts, shared helpers
     format.ts                     Salary, dates, sorting, CSV
   types/job.ts                    Shared TypeScript interfaces

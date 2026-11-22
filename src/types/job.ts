@@ -24,6 +24,21 @@ export type Seniority = (typeof SENIORITY_LEVELS)[number];
 /** Whether a result came from Claude or from the built-in keyword engine. */
 export type AnalysisSource = "ai" | "heuristic";
 
+/** One job on the resume. Dates are "YYYY" or "YYYY-MM"; a null end with current set means still there. */
+export interface WorkEntry {
+  title: string;
+  company: string;
+  start: string | null;
+  end: string | null;
+  current: boolean;
+}
+
+export interface EducationEntry {
+  credential: string;
+  institution: string;
+  year: string | null;
+}
+
 export interface CandidateProfile {
   summary: string;
   yearsOfExperience: number | null;
@@ -33,6 +48,20 @@ export interface CandidateProfile {
   recommendedRoles: string[];
   source: AnalysisSource;
   model?: string;
+  /** Read from the resume and editable. Absent on profiles saved before these existed. */
+  workHistory?: WorkEntry[];
+  education?: EducationEntry[];
+  certifications?: string[];
+}
+
+/** One saved version of the resume with the profile read from it. Matching uses the active one. */
+export interface ResumeVersion {
+  id: string;
+  name: string;
+  text: string;
+  fileName: string | null;
+  uploadedAt: string;
+  profile: CandidateProfile;
 }
 
 export interface StoredResume {

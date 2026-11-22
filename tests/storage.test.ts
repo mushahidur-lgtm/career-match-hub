@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LEGACY_SNAPSHOT_KEY, STORAGE_VERSION, VERSION_KEY, listRecovered, migrateStorage, stashUnreadable } from "@/lib/storage";
+import { LEGACY_SNAPSHOT_KEY, STORAGE_VERSION, VERSION_KEY, clearSnapshots, hasSnapshots, listRecovered, migrateStorage, stashUnreadable } from "@/lib/storage";
 import { memoryStorage } from "./helpers";
 
 describe("storage migration", () => {
@@ -69,5 +69,71 @@ describe("recovery of unreadable data", () => {
     stashUnreadable(s, "cmh:saved", "{broken");
     expect(listRecovered(s)).toEqual(["cmh:saved"]);
     expect(JSON.parse(s.getItem("cmh:recovered:cmh:saved")!).raw).toBe("{broken");
+  });
+});
+
+describe("upgrade to resume versions", () => {
+  const legacyResume = JSON.stringify({ text: "Senior Data Engineer resume text ".repeat(4), fileName: "Jordan_Lee-CV.pdf", uploadedAt: "2026-11-01T00:00:00Z" });
+  const legacyProfile = JSON.stringify({ summary: "s", yearsOfExperience: 9, seniority: "Senior", skills: { languages: ["Python"], frameworks: [], cloudData: [], tools: [] }, detectedRoles: [], recommendedRoles: [], source: "heuristic" });
+  const atV2 = (extra: Record<string, string> = {}) => memoryStorage({ [VERSION_KEY]: "2", "cmh:resume": legacyResume, "cmh:profile": legacyProfile, ...extra });
+
+  it("turns the single resume and profile into the first version and makes it active", () => {
+    const s = atV2();
+    migrateStorage(s);
+    const versions = JSON.parse(s.getItem("cmh:resumes")!);
+    expect(versions).toHaveLength(1);
+    expect(versions[0]).toMatchObject({ id: "legacy-1", name: "Jordan Lee CV", fileName: "Jordan_Lee-CV.pdf" });
+    expect(versions[0].profile.seniority).toBe("Senior");
+    expect(JSON.parse(s.getItem("cmh:activeResume")!)).toBe("legacy-1");
+  });
+
+  it("saves the originals in a snapshot before removing the old keys", () => {
+    const s = atV2();
+    expect(migrateStorage(s).snapshot).toBe(true);
+    expect(s.getItem("cmh:resume")).toBeNull();
+    const snap = JSON.parse(s.getItem("cmh:backup:pre-v3")!);
+    expect(snap.keys["cmh:resume"]).toBe(legacyResume);
+    expect(snap.keys["cmh:profile"]).toBe(legacyProfile);
+    expect(snap.fromVersion).toBe(2);
+  });
+
+  it("carries a user on layout 1 through both upgrades, with a snapshot for each", () => {
+    const s = memoryStorage({ "cmh:resume": legacyResume, "cmh:profile": legacyProfile, "cmh:filters": JSON.stringify({ employmentType: "All", minSalary: null }) });
+    migrateStorage(s);
+    expect(s.getItem(VERSION_KEY)).toBe(String(STORAGE_VERSION));
+    expect(s.getItem("cmh:backup:pre-v2")).not.toBeNull();
+    expect(s.getItem("cmh:backup:pre-v3")).not.toBeNull();
+    expect(JSON.parse(s.getItem("cmh:resumes")!)).toHaveLength(1);
+    expect(JSON.parse(s.getItem("cmh:filters")!).employmentType).toBe("Permanent full-time");
+  });
+
+  it("leaves existing versions alone and does not run twice", () => {
+    const s = atV2({ "cmh:resumes": '[{"id":"mine"}]' });
+    migrateStorage(s);
+    expect(s.getItem("cmh:resumes")).toBe('[{"id":"mine"}]');
+    const again = migrateStorage(s);
+    expect(again.migrated).toBe(false);
+  });
+
+  it("keeps the old keys when the profile is unreadable, rather than losing the resume", () => {
+    const s = atV2({ "cmh:profile": "{broken" });
+    migrateStorage(s);
+    expect(s.getItem("cmh:resume")).toBe(legacyResume);
+    expect(s.getItem("cmh:resumes")).toBeNull();
+  });
+
+  it("does nothing for someone who never added a resume", () => {
+    const s = memoryStorage({ [VERSION_KEY]: "2", "cmh:saved": "[]" });
+    migrateStorage(s);
+    expect(s.getItem("cmh:resumes")).toBeNull();
+  });
+
+  it("clears snapshots only when asked, and reports whether any exist", () => {
+    const s = atV2();
+    migrateStorage(s);
+    expect(hasSnapshots(s)).toBe(true);
+    expect(clearSnapshots(s)).toBe(1);
+    expect(hasSnapshots(s)).toBe(false);
+    expect(s.getItem("cmh:resumes")).not.toBeNull();
   });
 });

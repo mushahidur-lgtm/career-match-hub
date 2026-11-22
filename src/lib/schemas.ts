@@ -24,6 +24,20 @@ export const SkillSetSchema = z.object({
   tools: strList(),
 });
 
+export const WorkEntrySchema = z.object({
+  title: str(200),
+  company: str(200),
+  start: str(10).nullable(),
+  end: str(10).nullable(),
+  current: z.boolean(),
+});
+
+export const EducationSchema = z.object({
+  credential: str(200),
+  institution: str(200),
+  year: str(10).nullable(),
+});
+
 export const ProfileSchema = z.object({
   summary: str(4000),
   yearsOfExperience: z.number().nullable(),
@@ -33,6 +47,9 @@ export const ProfileSchema = z.object({
   recommendedRoles: strList(50),
   source: z.enum(["ai", "heuristic"]),
   model: str(100).optional(),
+  workHistory: z.array(WorkEntrySchema).max(60).optional(),
+  education: z.array(EducationSchema).max(30).optional(),
+  certifications: z.array(str(200)).max(60).optional(),
 });
 
 export const ResumeSchema = z.object({
@@ -40,6 +57,17 @@ export const ResumeSchema = z.object({
   fileName: str(300).nullable(),
   uploadedAt: iso,
 });
+
+export const ResumeVersionSchema = z.object({
+  id: str(80),
+  name: str(120),
+  text: str(200_000),
+  fileName: str(300).nullable(),
+  uploadedAt: iso,
+  profile: ProfileSchema,
+});
+
+export const ResumeVersionsSchema = z.array(ResumeVersionSchema).max(20);
 
 export const FiltersSchema = z.object({
   query: str(200),

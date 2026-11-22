@@ -1,42 +1,49 @@
 import { z } from "zod";
-import type {
-  CandidateProfile,
-  SavedJob,
-  SearchFilters,
-  SearchPreferences,
-  StoredResume,
-} from "@/types/job";
+import type { ResumeVersion, SavedJob, SearchFilters, SearchPreferences } from "@/types/job";
 import {
   FiltersSchema,
   PreferencesSchema,
   ProfileSchema,
   ResumeSchema,
+  ResumeVersionsSchema,
   SavedJobsSchema,
 } from "./schemas";
+import { LEGACY_VERSION_ID, nameFromFile } from "./storage";
 
 export const BACKUP_APP = "career-match-hub";
-export const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 2;
 const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
 
 export interface AppData {
-  resume: StoredResume | null;
-  profile: CandidateProfile | null;
+  resumes: ResumeVersion[];
+  activeResumeId: string | null;
   filters: SearchFilters;
   preferences: SearchPreferences;
   saved: SavedJob[];
 }
 
-const BackupSchema = z.object({
+const DataV2 = z.object({
+  resumes: ResumeVersionsSchema,
+  activeResumeId: z.string().max(80).nullable(),
+  filters: FiltersSchema,
+  preferences: PreferencesSchema,
+  saved: SavedJobsSchema,
+});
+
+/** Backups made before resume versions existed held a single resume and profile. */
+const DataV1 = z.object({
+  resume: ResumeSchema.nullable(),
+  profile: ProfileSchema.nullable(),
+  filters: FiltersSchema,
+  preferences: PreferencesSchema,
+  saved: SavedJobsSchema,
+});
+
+const Envelope = z.object({
   app: z.literal(BACKUP_APP),
   version: z.number().int().min(1).max(BACKUP_VERSION),
   exportedAt: z.string(),
-  data: z.object({
-    resume: ResumeSchema.nullable(),
-    profile: ProfileSchema.nullable(),
-    filters: FiltersSchema,
-    preferences: PreferencesSchema,
-    saved: SavedJobsSchema,
-  }),
+  data: z.unknown(),
 });
 
 export function buildBackup(data: AppData, now = new Date()): string {
@@ -44,6 +51,11 @@ export function buildBackup(data: AppData, now = new Date()): string {
 }
 
 export type ParsedBackup = { ok: true; data: AppData; exportedAt: string } | { ok: false; error: string };
+
+const damaged = (issue?: z.core.$ZodIssue): ParsedBackup => ({
+  ok: false,
+  error: `That is not a Career Match Hub backup, or it is damaged${issue?.path.length ? ` (${issue.path.join(".")})` : ""}.`,
+});
 
 export function parseBackup(text: string): ParsedBackup {
   if (text.length > MAX_BACKUP_BYTES) return { ok: false, error: "That file is too large to be a Career Match Hub backup." };
@@ -53,13 +65,26 @@ export function parseBackup(text: string): ParsedBackup {
   } catch {
     return { ok: false, error: "That file is not valid JSON." };
   }
-  const result = BackupSchema.safeParse(json);
-  if (!result.success) {
-    const first = result.error.issues[0];
-    const where = first?.path.length ? ` (${first.path.join(".")})` : "";
-    return { ok: false, error: `That is not a Career Match Hub backup, or it is damaged${where}.` };
+  const env = Envelope.safeParse(json);
+  if (!env.success) return damaged(env.error.issues[0]);
+
+  if (env.data.version >= 2) {
+    const d = DataV2.safeParse(env.data.data);
+    return d.success ? { ok: true, data: d.data as AppData, exportedAt: env.data.exportedAt } : damaged(d.error.issues[0]);
   }
-  return { ok: true, data: result.data.data as AppData, exportedAt: result.data.exportedAt };
+
+  const d = DataV1.safeParse(env.data.data);
+  if (!d.success) return damaged(d.error.issues[0]);
+  const { resume, profile } = d.data;
+  const resumes: ResumeVersion[] =
+    resume && profile
+      ? [{ id: LEGACY_VERSION_ID, name: nameFromFile(resume.fileName, "My resume"), text: resume.text, fileName: resume.fileName, uploadedAt: resume.uploadedAt, profile }]
+      : [];
+  return {
+    ok: true,
+    exportedAt: env.data.exportedAt,
+    data: { resumes, activeResumeId: resumes[0]?.id ?? null, filters: d.data.filters, preferences: d.data.preferences, saved: d.data.saved as SavedJob[] },
+  };
 }
 
 /** Two postings are the same job when they share an id, or the same title, company and place. */
@@ -80,4 +105,19 @@ export function mergeSavedJobs(current: SavedJob[], incoming: SavedJob[]): Saved
     idToKey.set(item.job.id, key);
   }
   return [...byKey.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+/** Adds resume versions from a backup that you do not already have, by id or identical text. */
+export function mergeResumes(current: ResumeVersion[], incoming: ResumeVersion[], max = 20): ResumeVersion[] {
+  const out = [...current];
+  const ids = new Set(current.map((r) => r.id));
+  const texts = new Set(current.map((r) => r.text.trim()));
+  for (const r of incoming) {
+    if (out.length >= max) break;
+    if (ids.has(r.id) || texts.has(r.text.trim())) continue;
+    out.push(r);
+    ids.add(r.id);
+    texts.add(r.text.trim());
+  }
+  return out;
 }

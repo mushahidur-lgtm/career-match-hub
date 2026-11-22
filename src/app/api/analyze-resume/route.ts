@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { callStructured, describeAiError, isAiConfigured } from "@/lib/anthropic";
 import { heuristicProfile } from "@/lib/heuristics";
-import { dedupe } from "@/lib/skills";
+import { buildProfileFromAi } from "@/lib/ai-profile";
 import { badRequest, rateLimit } from "@/lib/rate-limit";
-import { SENIORITY_LEVELS, type AnalyzeResumeResponse, type CandidateProfile } from "@/types/job";
+import { SENIORITY_LEVELS, type AnalyzeResumeResponse } from "@/types/job";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -26,11 +26,33 @@ const ProfileSchema = z.object({
   }),
   detectedRoles: z.array(z.string()).describe("Job titles the candidate has held, most recent first."),
   recommendedRoles: z.array(z.string()).describe("Between 5 and 8 job titles to search for, best fit first."),
+  workHistory: z
+    .array(
+      z.object({
+        title: z.string().describe("The job title exactly as the resume gives it."),
+        company: z.string().describe("The employer exactly as the resume gives it. Empty if not stated."),
+        start: z.string().nullable().describe('Start date as "YYYY-MM", or "YYYY" if no month is given. Null if not stated.'),
+        end: z.string().nullable().describe('End date as "YYYY-MM" or "YYYY". Null if still working there or not stated.'),
+        current: z.boolean().describe("True if the resume says this is the current job."),
+      }),
+    )
+    .describe("Every job on the resume, most recent first."),
+  education: z
+    .array(
+      z.object({
+        credential: z.string().describe("The degree or diploma as written."),
+        institution: z.string().describe("The school as written."),
+        year: z.string().nullable().describe('Graduation year as "YYYY", or null.'),
+      }),
+    )
+    .describe("Degrees and diplomas on the resume."),
+  certifications: z.array(z.string()).describe("Professional certifications and licences, as written on the resume."),
 });
 
 const SYSTEM = `You read resumes for a job search tool. Extract a candidate profile.
 Rules:
-- Use only what the resume says. Never invent skills, employers or years.
+- Use only what the resume says. Never invent skills, employers, schools, certifications or years.
+- Copy job titles, employers, schools and certification names as the resume writes them. Do not guess dates; use null when unsure.
 - List a skill only if the resume shows the person used it.
 - Use the common spelling of each skill (PostgreSQL, not Postgres; Node.js, not NodeJS).
 - recommendedRoles must be titles employers post, such as "Senior Data Engineer" or "BI Developer". Include 5 to 8, ordered best fit first. Include a mix of the candidate's current level and one step up.
@@ -62,22 +84,8 @@ export async function POST(req: Request) {
       user: `<resume>\n${resume}\n</resume>`,
       maxTokens: 16000,
     });
-    const profile: CandidateProfile = {
-      summary: data.summary.trim(),
-      yearsOfExperience: data.yearsOfExperience !== null && data.yearsOfExperience >= 0 ? Math.round(data.yearsOfExperience) : null,
-      seniority: data.seniority,
-      skills: {
-        languages: dedupe(data.skills.languages).slice(0, 40),
-        frameworks: dedupe(data.skills.frameworks).slice(0, 40),
-        cloudData: dedupe(data.skills.cloudData).slice(0, 40),
-        tools: dedupe(data.skills.tools).slice(0, 40),
-      },
-      detectedRoles: dedupe(data.detectedRoles).slice(0, 8),
-      recommendedRoles: dedupe(data.recommendedRoles).slice(0, 8),
-      source: "ai",
-      model,
-    };
-    if (!profile.recommendedRoles.length) profile.recommendedRoles = fallback.recommendedRoles;
+    // Anything Claude lists that the resume text does not contain is dropped here.
+    const profile = buildProfileFromAi(data, resume, fallback, model);
     const body: AnalyzeResumeResponse = { profile, warning: null };
     return NextResponse.json(body);
   } catch (err) {
