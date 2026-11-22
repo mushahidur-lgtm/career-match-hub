@@ -145,6 +145,20 @@ const MAX_PAGE_CHARS = 80_000;
 /** Words that say someone is no longer in the role. Employment is never assumed to be current without support. */
 const PAST_SIGNAL = /\b(?:former|formerly|previously|ex-|left (?:the company|in)|until (?:19|20)\d\d|no longer|alumn|retired|was (?:a|the|an) )/i;
 
+/**
+ * A different employer named right after "at" in the person's own passage ("Rosa Lindgren, Recruiter at Westfield Group"). A page on
+ * this company's own site that says someone works for another company must not give them credit as this company's contact.
+ */
+function namesAnotherEmployer(near: string, companyNorm: string): boolean {
+  const words = new Set(["the", "our", "a", "an", "this", "that", "your", "its", "their"]);
+  for (const m of near.matchAll(/\bat\s+((?:[A-Z][\w&.'-]*)(?:\s+(?:[A-Z][\w&.'-]*|&|and|of)){0,4})/g)) {
+    const phrase = m[1].split(/\s+/).filter((w) => !words.has(w.toLowerCase())).join(" ");
+    const norm = normalizeCompany(phrase);
+    if (norm && !companyNorm.includes(norm) && !norm.includes(companyNorm)) return true;
+  }
+  return false;
+}
+
 const BAD_NAME = /\b(team|careers?|department|recruiting|recruitment|hr|human resources|talent acquisition|opportunit|hiring)\b/i;
 
 export function verifyCandidates(raw: RawCandidate[], ev: WebEvidence, job: JobContext, now = new Date()): { contacts: Contact[]; dropped: Dropped[] } {
@@ -198,7 +212,11 @@ export function verifyCandidates(raw: RawCandidate[], ev: WebEvidence, job: JobC
       .map((x) => {
         const line = lineWith(x.pool, name);
         const host = hostOf(x.u);
-        const onDomain = companyHostPart.length > 2 && host.replace(/[^a-z0-9]/g, "").includes(companyHostPart.replace(/[^a-z0-9]/g, ""));
+        const nearText = nearName(x.pool, name);
+        const onDomainHost = companyHostPart.length > 2 && host.replace(/[^a-z0-9]/g, "").includes(companyHostPart.replace(/[^a-z0-9]/g, ""));
+        const companyInPassage = companyKnown && normalizeCompany(line).includes(companyNorm);
+        // Being on the company's own site counts only while the passage does not say they work somewhere else.
+        const onDomain = onDomainHost && (companyInPassage || !namesAnotherEmployer(nearText, companyNorm));
         return {
           ...x,
           line,

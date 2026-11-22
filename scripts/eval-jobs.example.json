@@ -1,0 +1,12 @@
+[
+  { "industry": "Technology", "title": "REPLACE with a real job title", "company": "REPLACE with the real employer", "location": "Ottawa, ON", "category": "Software engineering", "description": "Paste the start of the real posting (optional, used to pick the right team)." },
+  { "industry": "Data engineering", "title": "REPLACE", "company": "REPLACE", "location": "Toronto, ON", "category": "Data and analytics" },
+  { "industry": "Finance", "title": "REPLACE", "company": "REPLACE", "location": "Toronto, ON", "category": "Business and finance" },
+  { "industry": "Healthcare", "title": "REPLACE", "company": "REPLACE", "location": "Ottawa, ON", "category": "Other" },
+  { "industry": "Government", "title": "REPLACE", "company": "REPLACE", "location": "Ottawa, ON", "category": "Other" },
+  { "industry": "Consulting", "title": "REPLACE", "company": "REPLACE", "location": "Toronto, ON", "category": "Business and finance" },
+  { "industry": "Technology", "title": "REPLACE", "company": "REPLACE", "location": "Remote - Canada", "category": "Cloud and DevOps" },
+  { "industry": "Data engineering", "title": "REPLACE", "company": "REPLACE", "location": "Ottawa, ON", "category": "Data and analytics" },
+  { "industry": "Finance", "title": "REPLACE", "company": "REPLACE", "location": "Montreal, QC", "category": "Business and finance" },
+  { "industry": "Government", "title": "REPLACE", "company": "REPLACE", "location": "Gatineau, QC", "category": "Other" }
+]
