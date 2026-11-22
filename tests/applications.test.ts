@@ -118,7 +118,8 @@ describe("moving through the pipeline", () => {
   it("allows skipping stages and moving back", () => {
     const jumped = moveApplication(app("Interested"), "Offer", now);
     expect(jumped.status).toBe("Offer");
-    expect(jumped.appliedAt).toBe("2026-11-22");
+    // Jumping ahead does not say when it was applied, so the date stays unknown.
+    expect(jumped.appliedAt).toBeNull();
     expect(moveApplication(jumped, "Interested", now).status).toBe("Interested");
   });
   it("keeps the application date when moved back", () => {
@@ -186,14 +187,14 @@ describe("editing", () => {
 
 describe("interviews", () => {
   it("adds one, logs it, and moves an applied job to Interview", () => {
-    const a = addInterview(app("Applied"), newInterview({ stage: "Technical", format: "Video", at: "2026-12-03T14:00" }), now, resume);
+    const a = addInterview(app("Applied"), newInterview({ stage: "Technical", format: "Video", at: "2026-12-03T14:00" }), now);
     expect(a.status).toBe("Interview");
     expect(a.interviews).toHaveLength(1);
     expect(texts(a)).toEqual(expect.arrayContaining(["Added: Technical interview, video on 2026-12-03 at 14:00.", "Moved from Applied to Interview."]));
   });
-  it("moves a job that had not been applied to as well, and sets the date it went out", () => {
+  it("moves a job that had not been applied to as well, without inventing the date it went out", () => {
     const a = addInterview(app("Interested"), newInterview({ at: "2026-12-03T14:00" }), now);
-    expect(a).toMatchObject({ status: "Interview", appliedAt: "2026-11-22" });
+    expect(a).toMatchObject({ status: "Interview", appliedAt: null });
   });
   it("does not move an offer or a finished application back", () => {
     expect(addInterview(app("Offer"), newInterview(), now).status).toBe("Offer");

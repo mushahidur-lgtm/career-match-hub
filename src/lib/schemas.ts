@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LIMITS } from "./limits";
 import {
   APPLICATION_STATUSES,
   EMPLOYMENT_FILTERS,
@@ -177,41 +178,48 @@ export const InterviewSchema = z.object({
   stage: z.enum(INTERVIEW_STAGES),
   format: z.enum(INTERVIEW_FORMATS),
   status: z.enum(INTERVIEW_STATUSES),
-  interviewers: str(500),
-  prepNotes: str(10_000),
-  questionsToAsk: z.array(str(500)).max(30),
-  topicsToReview: z.array(str(200)).max(40),
-  feedback: str(10_000),
+  interviewers: str(LIMITS.interviewers),
+  prepNotes: str(LIMITS.prepNotes),
+  questionsToAsk: z.array(str(LIMITS.question)).max(LIMITS.questionsMax),
+  topicsToReview: z.array(str(LIMITS.topic)).max(LIMITS.topicsMax),
+  feedback: str(LIMITS.feedback),
 });
 
 export const ActivitySchema = z.object({
   id: str(80),
   at: iso,
   kind: z.enum(["created", "status", "note", "contact", "interview", "edit"]),
-  text: str(2000),
+  text: str(LIMITS.historyText),
 });
 
 export const SavedJobSchema = z.object({
   job: JobSchema,
   status: StatusSchema,
-  notes: str(10_000),
+  notes: str(LIMITS.notes),
   savedAt: iso,
   updatedAt: iso,
   appliedAt: day,
   resumeVersionId: str(80).nullable().optional(),
-  resumeName: str(120).nullable().optional(),
-  coverLetter: str(20_000).optional(),
-  recruiter: z.object({ name: str(200), email: str(200), phone: str(60) }).optional(),
+  resumeName: str(LIMITS.resumeName).nullable().optional(),
+  coverLetter: str(LIMITS.coverLetter).optional(),
+  recruiter: z.object({ name: str(LIMITS.name), email: str(LIMITS.email), phone: str(LIMITS.phone) }).optional(),
   followUpDate: day,
   deadline: day,
   responseDue: day,
-  salaryExpectation: str(200).optional(),
+  salaryExpectation: str(LIMITS.salaryExpectation).optional(),
   offer: z
-    .object({ salary: str(200), bonus: str(200), benefits: str(2000), startDate: str(10).nullable().default(null), decideBy: str(10).nullable().default(null), notes: str(5000) })
+    .object({
+      salary: str(LIMITS.offerShort),
+      bonus: str(LIMITS.offerShort),
+      benefits: str(LIMITS.offerBenefits),
+      startDate: str(10).nullable().default(null),
+      decideBy: str(10).nullable().default(null),
+      notes: str(LIMITS.offerNotes),
+    })
     .optional(),
-  rejectionReason: str(2000).optional(),
-  interviews: z.array(InterviewSchema).max(40).optional(),
-  history: z.array(ActivitySchema).max(500).optional(),
+  rejectionReason: str(LIMITS.rejectionReason).optional(),
+  interviews: z.array(InterviewSchema).max(LIMITS.interviewsMax).optional(),
+  history: z.array(ActivitySchema).max(LIMITS.historyMax).optional(),
 });
 
 export const SavedJobsSchema = z.array(SavedJobSchema).max(5000);

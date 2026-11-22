@@ -2,16 +2,20 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { X } from "lucide-react";
+import { todayLocal } from "@/lib/applications";
 import { newId } from "@/lib/ids";
 import { inferCategory } from "@/lib/providers/common";
 import { APPLICATION_STATUSES, type Application, type ApplicationStatus, type Job } from "@/types/job";
 import { safeUrl } from "./job-parts";
 import { Notice, inputClass, primaryButton, secondaryButton } from "./ui";
 
+const SENT_STAGES: ApplicationStatus[] = ["Applied", "Interview", "Offer", "Rejected"];
+
 interface Props {
   /** Looks for a job you already track, so one posting never becomes two applications. */
   findExisting: (job: Job) => Application | undefined;
-  onCreate: (job: Job, status: ApplicationStatus) => void;
+  /** `appliedAt` is given only for stages from Applied on; null means the date is not known. */
+  onCreate: (job: Job, status: ApplicationStatus, appliedAt?: string | null) => void;
   onOpenExisting: (id: string) => void;
   onClose: () => void;
 }
@@ -19,7 +23,7 @@ interface Props {
 /** For a job you found somewhere other than a search, such as a referral or a company site. */
 export function AddApplicationDialog({ findExisting, onCreate, onOpenExisting, onClose }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [form, setForm] = useState({ title: "", company: "", location: "", url: "", status: "Interested" as ApplicationStatus });
+  const [form, setForm] = useState({ title: "", company: "", location: "", url: "", status: "Interested" as ApplicationStatus, appliedOn: "" });
   const [error, setError] = useState<string | null>(null);
   const [existing, setExisting] = useState<Application | null>(null);
 
@@ -59,7 +63,8 @@ export function AddApplicationDialog({ findExisting, onCreate, onOpenExisting, o
     };
     const dupe = findExisting(job);
     if (dupe) return setExisting(dupe);
-    onCreate(job, form.status);
+    // Only stages from Applied on have an application date. Blank means unknown, never today by default.
+    onCreate(job, form.status, SENT_STAGES.includes(form.status) ? form.appliedOn || null : undefined);
     dialog.current?.close();
   }
 
@@ -98,12 +103,27 @@ export function AddApplicationDialog({ findExisting, onCreate, onOpenExisting, o
         {input("add-url", "Link to the posting (optional)", "url", { placeholder: "https://", type: "url" })}
         <div className="flex flex-col gap-1.5 text-sm font-medium">
           <label htmlFor="add-status">Stage</label>
-          <select id="add-status" value={form.status} onChange={(e) => set("status", e.target.value as ApplicationStatus)} className={inputClass}>
+          <select
+            id="add-status"
+            value={form.status}
+            onChange={(e) => {
+              const status = e.target.value as ApplicationStatus;
+              setForm((f) => ({ ...f, status, appliedOn: status === "Applied" && !f.appliedOn ? todayLocal() : f.appliedOn }));
+            }}
+            className={inputClass}
+          >
             {APPLICATION_STATUSES.map((s) => (
               <option key={s}>{s}</option>
             ))}
           </select>
         </div>
+        {SENT_STAGES.includes(form.status) && (
+          <div className="flex flex-col gap-1.5 text-sm font-medium">
+            <label htmlFor="add-applied-on">Applied on</label>
+            <input id="add-applied-on" type="date" value={form.appliedOn} onChange={(e) => set("appliedOn", e.target.value)} className={inputClass} />
+            <span className="text-xs font-normal text-muted">Leave blank if you do not know. It is not filled in for you.</span>
+          </div>
+        )}
         {error && <Notice tone="error">{error}</Notice>}
         {existing && (
           <Notice tone="warn">

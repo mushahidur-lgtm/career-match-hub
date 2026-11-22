@@ -7,6 +7,7 @@ import {
   EMPLOYMENT_FILTERS,
   JOB_CATEGORIES,
   WORK_MODES,
+  legacyStatus,
   type ApplicationStatus,
   type EmploymentTypeFilter,
   type Job,
@@ -67,7 +68,8 @@ export const RefineSchema = z.object({
   hideStale: z.boolean(),
   company: z.string().max(100),
   title: z.string().max(100),
-  status: z.enum(["All", "Not tracked", ...APPLICATION_STATUSES]),
+  // Filters saved before the pipeline grew may hold an old status name.
+  status: z.preprocess(legacyStatus, z.enum(["All", "Not tracked", ...APPLICATION_STATUSES])),
 });
 
 export interface RefineContext {

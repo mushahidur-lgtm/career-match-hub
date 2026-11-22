@@ -111,6 +111,7 @@ Scores are guidance about fit. They do not predict hiring decisions.
 
 - Your resume versions, profiles, filters, results and saved jobs live in your browser's `localStorage`. Nothing is stored on the server and there is no database.
 - Tailored suggestions and interview practice are sent to Anthropic only when you press the button: the posting and your resume text. The result is cached in this browser (the last 20 jobs) so it is not requested again.
+- Applications load one at a time: if one entry cannot be read, the rest still load, and the damaged one is set aside. Settings lets you download what was set aside.
 - Applications are stored under their own key. The upgrade copies your earlier saved jobs there and leaves the old copy untouched, so returning to the previous release still shows them.
 - Upgrades save a snapshot of your previous data in the same browser storage, and keep the old single-resume copy so you can return to the previous release without losing anything. Those copies include your old resume text. Settings has a button to delete them once you are happy.
 - Uploaded files are parsed in memory on the server and discarded.

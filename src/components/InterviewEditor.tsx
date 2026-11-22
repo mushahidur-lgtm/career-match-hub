@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Quote, Sparkles, Trash2 } from "lucide-react";
 import { PREP_DISCLAIMER, buildPracticeSet, type AiPrep } from "@/lib/interview-prep";
+import { LIMITS } from "@/lib/limits";
 import {
   INTERVIEW_FORMATS,
   INTERVIEW_STAGES,
@@ -28,7 +29,7 @@ interface Props {
 }
 
 /** One item per line. Keeps what you are typing as it is, and saves it when you pause or leave the box. */
-function LinesField({ id, label, help, value, onCommit, rows = 4 }: { id: string; label: string; help?: string; value: string[]; onCommit: (v: string[]) => void; rows?: number }) {
+function LinesField({ id, label, help, value, onCommit, maxItems, maxLength, rows = 4 }: { id: string; label: string; help?: string; value: string[]; onCommit: (v: string[]) => void; maxItems: number; maxLength: number; rows?: number }) {
   const joined = value.join("\n");
   const [draft, setDraft] = useState(joined);
   useEffect(() => {
@@ -37,7 +38,7 @@ function LinesField({ id, label, help, value, onCommit, rows = 4 }: { id: string
     setDraft(joined);
   }, [joined]);
   const commit = (text: string) => {
-    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 40);
+    const lines = text.split("\n").map((l) => l.trim().slice(0, maxLength)).filter(Boolean).slice(0, maxItems);
     if (lines.join("\n") !== joined) onCommit(lines);
   };
   useEffect(() => {
@@ -95,7 +96,7 @@ export function InterviewEditor({ app, interview: iv, resume, aiAvailable, onCha
     }
   }
 
-  const addTo = (key: "topicsToReview" | "questionsToAsk", items: string[]) => onChange({ [key]: [...new Set([...iv[key], ...items])].slice(0, 40) } as Partial<Interview>);
+  const addTo = (key: "topicsToReview" | "questionsToAsk", items: string[]) => onChange({ [key]: [...new Set([...iv[key], ...items])] } as Partial<Interview>);
 
   return (
     <div className="space-y-4 rounded-xl border border-line p-4">
@@ -130,8 +131,8 @@ export function InterviewEditor({ app, interview: iv, resume, aiAvailable, onCha
       </Field>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <LinesField id={`${base}-topics`} label="Technical topics to review" help="One per line." value={iv.topicsToReview} onCommit={(v) => onChange({ topicsToReview: v })} />
-        <LinesField id={`${base}-asks`} label="Questions to ask" help="One per line." value={iv.questionsToAsk} onCommit={(v) => onChange({ questionsToAsk: v })} />
+        <LinesField id={`${base}-topics`} label="Technical topics to review" help={`One per line, up to ${LIMITS.topicsMax}.`} value={iv.topicsToReview} maxItems={LIMITS.topicsMax} maxLength={LIMITS.topic} onCommit={(v) => onChange({ topicsToReview: v })} />
+        <LinesField id={`${base}-asks`} label="Questions to ask" help={`One per line, up to ${LIMITS.questionsMax}.`} value={iv.questionsToAsk} maxItems={LIMITS.questionsMax} maxLength={LIMITS.question} onCommit={(v) => onChange({ questionsToAsk: v })} />
       </div>
       <Field label="Preparation notes" id={`${base}-prep`}>
         <textarea id={`${base}-prep`} value={iv.prepNotes} rows={3} maxLength={10_000} onChange={(e) => onChange({ prepNotes: e.target.value })} className={`${inputClass} resize-y`} />

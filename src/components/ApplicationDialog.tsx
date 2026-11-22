@@ -4,6 +4,7 @@ import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { ExternalLink, Plus, Trash2, X } from "lucide-react";
 import { addInterview, addNote, logContact, newInterview, removeHistoryEntry, removeInterview, updateApplication, updateInterview } from "@/lib/applications";
 import { formatSalary } from "@/lib/format";
+import { LIMITS } from "@/lib/limits";
 import {
   APPLICATION_STATUSES,
   type Application,
@@ -194,7 +195,7 @@ export function ApplicationDialog({ app, initialTab = "details", onUpdate, onMov
                       id={`${id}-rec-${k}`}
                       type={k === "email" ? "email" : k === "phone" ? "tel" : "text"}
                       value={(app.recruiter ?? EMPTY_RECRUITER)[k]}
-                      maxLength={200}
+                      maxLength={k === "phone" ? LIMITS.phone : LIMITS.name}
                       onChange={(e) => update({ recruiter: { ...(app.recruiter ?? EMPTY_RECRUITER), [k]: e.target.value } })}
                       className={inputClass}
                     />

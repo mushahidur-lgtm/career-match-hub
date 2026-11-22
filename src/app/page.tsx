@@ -19,6 +19,7 @@ import { StatusBanner } from "@/components/StatusBanner";
 import { Notice, inputClass, secondaryButton } from "@/components/ui";
 import { jobKey, mergeResumes, mergeSavedJobs, type AppData } from "@/lib/backup";
 import { computeReminders } from "@/lib/applications";
+import { readApplications, stashRejected } from "@/lib/applications-load";
 import { applicationsToCsv, jobsToCsv } from "@/lib/export";
 import { sortJobs } from "@/lib/format";
 import { profileSkills } from "@/lib/heuristics";
@@ -26,7 +27,7 @@ import { newId, uniqueName } from "@/lib/ids";
 import { computeOverview } from "@/lib/overview";
 import { addSavedJob, findSaved, removeSavedJob, setSavedNotes, setSavedStatus, updateSavedJob } from "@/lib/saved";
 import { DEFAULT_REFINE, RefineSchema, refineJobs, type RefineFilters } from "@/lib/refine";
-import { FiltersSchema, PreferencesSchema, ResumeVersionsSchema, SavedJobsSchema } from "@/lib/schemas";
+import { FiltersSchema, PreferencesSchema, ResumeVersionsSchema } from "@/lib/schemas";
 import { fillStructure, lacksStructure } from "@/lib/resume-sections";
 import { nameFromFile } from "@/lib/storage";
 import { usePersistentState } from "@/lib/use-persistent-state";
@@ -70,10 +71,20 @@ export default function Home() {
   const [filters, setFilters] = usePersistentState<Filters>("cmh:filters", DEFAULT_FILTERS, check(FiltersSchema));
   const [preferences, setPreferences] = usePersistentState<SearchPreferences>("cmh:preferences", DEFAULT_PREFERENCES, check(PreferencesSchema));
   const [results, setResults] = usePersistentState<StoredResults | null>("cmh:results", null);
-  const [saved, setSaved, , , savedLost] = usePersistentState<SavedJob[]>("cmh:applications", [], check(SavedJobsSchema));
+  // Applications load one at a time, so one damaged entry never hides the rest.
+  const [skipped, setSkipped] = useState(0);
+  const [saved, setSaved, , , savedLost] = usePersistentState<SavedJob[]>("cmh:applications", [], (value) => {
+    if (!Array.isArray(value)) return undefined;
+    const { kept, rejected } = readApplications(value);
+    if (rejected.length) {
+      stashRejected(rejected);
+      setSkipped(rejected.length);
+    }
+    return kept;
+  });
   const [sort, setSort] = usePersistentState<SortKey>("cmh:sort", "score");
   const [refine, setRefine] = usePersistentState<RefineFilters>("cmh:refine", DEFAULT_REFINE, check(RefineSchema));
-  const recovered = resumesLost || savedLost;
+  const recovered = resumesLost || savedLost || skipped > 0;
 
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [loading, setLoading] = useState(false);
@@ -162,7 +173,7 @@ export default function Home() {
   /* ----- saved jobs ----- */
   // `id` below is the tracked entry's own id. The cards and dialogs pass `saved.job.id`.
   const resumeRef = active ? { id: active.id, name: active.name } : null;
-  const saveJob = (job: Job, st: ApplicationStatus) => setSaved((list) => addSavedJob(list, job, st, new Date(), resumeRef));
+  const saveJob = (job: Job, st: ApplicationStatus, appliedAt?: string | null) => setSaved((list) => addSavedJob(list, job, st, new Date(), resumeRef, appliedAt));
   const setJobStatus = (id: string, st: ApplicationStatus) => setSaved((list) => setSavedStatus(list, id, st, new Date(), { resume: resumeRef }));
   const setJobNotes = (id: string, notes: string) => setSaved((list) => setSavedNotes(list, id, notes));
   const removeJob = (id: string) => setSaved((list) => removeSavedJob(list, id));
@@ -407,8 +418,8 @@ export default function Home() {
       {adding && (
         <AddApplicationDialog
           findExisting={(job) => findSaved(saved, job)}
-          onCreate={(job, st) => {
-            saveJob(job, st);
+          onCreate={(job, st, appliedAt) => {
+            saveJob(job, st, appliedAt);
             setOpenApp({ id: job.id, tab: "details" });
           }}
           onOpenExisting={(id) => setOpenApp({ id, tab: "details" })}

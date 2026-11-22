@@ -1,4 +1,5 @@
 import { newId } from "@/lib/ids";
+import { LIMITS } from "@/lib/limits";
 import {
   APPLICATION_OUTCOMES,
   APPLICATION_STAGES,
@@ -8,6 +9,7 @@ import {
   type ApplicationStatus,
   type Interview,
   type Job,
+  type OfferDetails,
 } from "@/types/job";
 
 /* ---------- dates ---------- */
@@ -32,6 +34,12 @@ export function parseLocalDateTime(value: string | null | undefined): Date | nul
   if (!m || !day) return null;
   day.setHours(Number(m[2]), Number(m[3]));
   return day;
+}
+
+/** A real date in a sensible range. Typing a year digit by digit passes through values like 0002 and 0020 on the way. */
+export function plausibleDay(day: string | null | undefined): boolean {
+  const d = parseDay(day);
+  return d !== null && d.getFullYear() >= 2000 && d.getFullYear() <= 2100;
 }
 
 export function addDays(day: string, n: number): string {
@@ -64,7 +72,6 @@ const SENDING: ApplicationStatus[] = ["Applied", "Interview", "Offer"];
 export const wasSent = (a: Pick<Application, "status" | "appliedAt">) => Boolean(a.appliedAt) || SENDING.includes(a.status) || a.status === "Rejected";
 
 export const DEFAULT_FOLLOW_UP_DAYS = 7;
-const MAX_HISTORY = 500;
 
 /* ---------- history ---------- */
 
@@ -73,7 +80,60 @@ export function activity(kind: ActivityKind, text: string, now = new Date()): Ac
 }
 
 const withHistory = (a: Application, entries: ActivityEntry[]): Application =>
-  entries.length ? { ...a, history: [...(a.history ?? []), ...entries].slice(-MAX_HISTORY) } : a;
+  entries.length ? { ...a, history: [...(a.history ?? []), ...entries].slice(-LIMITS.historyMax) } : a;
+
+const COALESCE_MS = 60_000;
+
+/**
+ * Adds a history entry, or, if the last entry is an edit of the same thing made under a minute ago,
+ * replaces it. Picking a date by typing fires a change for each step, and those are one edit.
+ */
+function appendCoalesced(a: Application, entry: ActivityEntry, prefix: string): Application {
+  const history = a.history ?? [];
+  const last = history[history.length - 1];
+  const recent = last && last.kind === entry.kind && last.text.startsWith(prefix) && Date.parse(entry.at) - Date.parse(last.at) < COALESCE_MS;
+  return { ...a, history: (recent ? [...history.slice(0, -1), entry] : [...history, entry]).slice(-LIMITS.historyMax) };
+}
+
+/* ---------- keeping values within what can be saved ---------- */
+
+const cut = (v: string | undefined, n: number) => (v ?? "").slice(0, n);
+const lines = (items: string[], maxItems: number, maxLen: number) => items.map((l) => l.trim().slice(0, maxLen)).filter(Boolean).slice(0, maxItems);
+
+export function clampInterview(i: Interview): Interview {
+  return {
+    ...i,
+    interviewers: cut(i.interviewers, LIMITS.interviewers),
+    prepNotes: cut(i.prepNotes, LIMITS.prepNotes),
+    feedback: cut(i.feedback, LIMITS.feedback),
+    questionsToAsk: lines(i.questionsToAsk, LIMITS.questionsMax, LIMITS.question),
+    topicsToReview: lines(i.topicsToReview, LIMITS.topicsMax, LIMITS.topic),
+  };
+}
+
+const clampOffer = (o: OfferDetails): OfferDetails => ({
+  ...o,
+  salary: cut(o.salary, LIMITS.offerShort),
+  bonus: cut(o.bonus, LIMITS.offerShort),
+  benefits: cut(o.benefits, LIMITS.offerBenefits),
+  notes: cut(o.notes, LIMITS.offerNotes),
+});
+
+/** Cuts every field to the largest value the storage accepts, so whatever is typed can always be saved and read back. */
+export function clampApplication(a: Application): Application {
+  return {
+    ...a,
+    notes: cut(a.notes, LIMITS.notes),
+    ...(a.coverLetter !== undefined ? { coverLetter: cut(a.coverLetter, LIMITS.coverLetter) } : {}),
+    ...(a.salaryExpectation !== undefined ? { salaryExpectation: cut(a.salaryExpectation, LIMITS.salaryExpectation) } : {}),
+    ...(a.rejectionReason !== undefined ? { rejectionReason: cut(a.rejectionReason, LIMITS.rejectionReason) } : {}),
+    ...(a.resumeName ? { resumeName: a.resumeName.slice(0, LIMITS.resumeName) } : {}),
+    ...(a.recruiter ? { recruiter: { name: cut(a.recruiter.name, LIMITS.name), email: cut(a.recruiter.email, LIMITS.email), phone: cut(a.recruiter.phone, LIMITS.phone) } } : {}),
+    ...(a.offer ? { offer: clampOffer(a.offer) } : {}),
+    ...(a.interviews ? { interviews: a.interviews.slice(0, LIMITS.interviewsMax).map(clampInterview) } : {}),
+    ...(a.history ? { history: a.history.slice(-LIMITS.historyMax) } : {}),
+  };
+}
 
 /* ---------- creating and moving ---------- */
 
@@ -82,18 +142,22 @@ export interface ResumeRef {
   name: string;
 }
 
-export function createApplication(job: Job, status: ApplicationStatus = "Interested", now = new Date(), resume?: ResumeRef | null): Application {
+/**
+ * Starts tracking a job. Being added as Applied means you are applying now, so today is recorded.
+ * Added as Interview or Offer, the date it went out is unknown and is left blank unless you give it.
+ */
+export function createApplication(job: Job, status: ApplicationStatus = "Interested", now = new Date(), resume?: ResumeRef | null, appliedAt?: string | null): Application {
   const at = now.toISOString();
-  const sent = SENDING.includes(status);
+  const date = appliedAt !== undefined ? appliedAt : status === "Applied" ? todayLocal(now) : null;
   return {
     job,
     status,
     notes: "",
     savedAt: at,
     updatedAt: at,
-    appliedAt: sent ? todayLocal(now) : null,
-    resumeVersionId: sent && resume ? resume.id : null,
-    resumeName: sent && resume ? resume.name : null,
+    appliedAt: date,
+    resumeVersionId: date && resume ? resume.id : null,
+    resumeName: date && resume ? resume.name : null,
     followUpDate: status === "Applied" ? addDays(todayLocal(now), DEFAULT_FOLLOW_UP_DAYS) : null,
     history: [activity("created", `Added as ${status}.`, now)],
   };
@@ -119,9 +183,9 @@ export function moveApplication(app: Application, to: ApplicationStatus, now = n
   const reopened = isOutcome(from) && isActive(to);
   entries.push(activity("status", reopened ? `Reopened: moved from ${from} to ${to}.` : `Moved from ${from} to ${to}.`, now));
 
-  // Only the first time it goes out. A job that was already applied to, such as one saved before dates
-  // were recorded, keeps an unknown date rather than being given today's.
-  const firstSend = SENDING.includes(to) && !wasSent(app);
+  // Only when you apply, and only the first time. A job already applied to, such as one saved before dates
+  // were recorded, or one jumped straight to Interview, keeps an unknown date rather than being given today's.
+  const firstSend = to === "Applied" && !wasSent(app);
   if (firstSend && !app.appliedAt) {
     const today = todayLocal(now);
     next = { ...next, appliedAt: today };
@@ -158,23 +222,24 @@ const DATE_FIELDS: { key: "followUpDate" | "deadline" | "responseDue" | "applied
  * Text you type (notes, cover letter, contacts) is not logged keystroke by keystroke.
  */
 export function updateApplication(app: Application, patch: Partial<Application>, now = new Date()): Application {
-  const next: Application = { ...app, ...patch, updatedAt: now.toISOString() };
-  const entries: ActivityEntry[] = [];
+  let next: Application = clampApplication({ ...app, ...patch, updatedAt: now.toISOString() });
   for (const { key, label } of DATE_FIELDS) {
-    if (key in patch && (patch[key] ?? null) !== (app[key] ?? null)) {
-      entries.push(activity("edit", patch[key] ? `${label} set to ${patch[key]}.` : `${label} cleared.`, now));
+    const value = patch[key] ?? null;
+    if (key in patch && value !== (app[key] ?? null) && (value === null || plausibleDay(value))) {
+      next = appendCoalesced(next, activity("edit", value ? `${label} set to ${value}.` : `${label} cleared.`, now), label);
     }
   }
-  if (patch.offer && patch.offer.decideBy !== (app.offer?.decideBy ?? null)) {
-    entries.push(activity("edit", patch.offer.decideBy ? `Offer decision date set to ${patch.offer.decideBy}.` : "Offer decision date cleared.", now));
+  const decideBy = patch.offer?.decideBy ?? null;
+  if (patch.offer && decideBy !== (app.offer?.decideBy ?? null) && (decideBy === null || plausibleDay(decideBy))) {
+    next = appendCoalesced(next, activity("edit", decideBy ? `Offer decision date set to ${decideBy}.` : "Offer decision date cleared.", now), "Offer decision date");
   }
   if (patch.offer && patch.offer.salary.trim() && !app.offer?.salary.trim()) {
-    entries.push(activity("edit", "Offer details recorded.", now));
+    next = withHistory(next, [activity("edit", "Offer details recorded.", now)]);
   }
   if (patch.resumeVersionId !== undefined && patch.resumeVersionId !== (app.resumeVersionId ?? null) && patch.resumeName) {
-    entries.push(activity("edit", `Resume used: ${patch.resumeName}.`, now));
+    next = withHistory(next, [activity("edit", `Resume used: ${patch.resumeName}.`, now)]);
   }
-  return withHistory(next, entries);
+  return next;
 }
 
 export function addNote(app: Application, text: string, now = new Date()): Application {
@@ -212,24 +277,35 @@ export function newInterview(over: Partial<Interview> = {}): Interview {
 
 const describeInterview = (i: Interview) => `${i.stage} interview, ${i.format.toLowerCase()}${i.at ? ` on ${i.at.replace("T", " at ")}` : ", time not set"}`;
 
-/** Adds an interview. If the application had not reached the interview stage yet, it moves there. */
-export function addInterview(app: Application, interview: Interview, now = new Date(), resume?: ResumeRef | null): Application {
-  let next: Application = withHistory({ ...app, interviews: [...(app.interviews ?? []), interview], updatedAt: now.toISOString() }, [
-    activity("interview", `Added: ${describeInterview(interview)}.`, now),
+/**
+ * Adds an interview. If the application had not reached the interview stage yet, it moves there;
+ * the date it was applied is left as it was, since an interview does not say when you applied.
+ * Does nothing once there are as many interviews as can be saved.
+ */
+export function addInterview(app: Application, interview: Interview, now = new Date()): Application {
+  if ((app.interviews ?? []).length >= LIMITS.interviewsMax) return app;
+  const added = clampInterview(interview);
+  let next: Application = withHistory({ ...app, interviews: [...(app.interviews ?? []), added], updatedAt: now.toISOString() }, [
+    activity("interview", `Added: ${describeInterview(added)}.`, now),
   ]);
-  if (isActive(next.status) && stageIndex(next.status) < stageIndex("Interview")) next = moveApplication(next, "Interview", now, { resume });
+  if (isActive(next.status) && stageIndex(next.status) < stageIndex("Interview")) next = moveApplication(next, "Interview", now);
   return next;
 }
 
 export function updateInterview(app: Application, id: string, patch: Partial<Interview>, now = new Date()): Application {
   const before = (app.interviews ?? []).find((i) => i.id === id);
   if (!before) return app;
-  const after = { ...before, ...patch };
-  const entries: ActivityEntry[] = [];
-  if (patch.at !== undefined && patch.at !== before.at) entries.push(activity("interview", after.at ? `Rescheduled: ${describeInterview(after)}.` : `Time cleared for the ${before.stage} interview.`, now));
-  if (patch.status && patch.status !== before.status) entries.push(activity("interview", `${before.stage} interview marked ${patch.status.toLowerCase()}.`, now));
-  if (patch.feedback !== undefined && !before.feedback.trim() && patch.feedback.trim()) entries.push(activity("interview", `Feedback recorded for the ${before.stage} interview.`, now));
-  return withHistory({ ...app, interviews: (app.interviews ?? []).map((i) => (i.id === id ? after : i)), updatedAt: now.toISOString() }, entries);
+  const after = clampInterview({ ...before, ...patch });
+  let next: Application = { ...app, interviews: (app.interviews ?? []).map((i) => (i.id === id ? after : i)), updatedAt: now.toISOString() };
+  if (patch.at !== undefined && patch.at !== before.at && (after.at === null || plausibleDay(after.at.slice(0, 10)))) {
+    const text = after.at ? `Rescheduled: ${describeInterview(after)}.` : `Time cleared for the ${before.stage} interview.`;
+    next = appendCoalesced(next, activity("interview", text, now), `Rescheduled: ${before.stage}`);
+  }
+  if (patch.status && patch.status !== before.status) next = withHistory(next, [activity("interview", `${before.stage} interview marked ${patch.status.toLowerCase()}.`, now)]);
+  if (patch.feedback !== undefined && !before.feedback.trim() && patch.feedback.trim()) {
+    next = withHistory(next, [activity("interview", `Feedback recorded for the ${before.stage} interview.`, now)]);
+  }
+  return next;
 }
 
 export function removeInterview(app: Application, id: string, now = new Date()): Application {
@@ -290,21 +366,21 @@ export function computeReminders(apps: Application[], now = new Date(), horizon 
     if (!isActive(app.status)) continue;
     const label = `${app.job.title} at ${app.job.company}`;
 
-    if (app.followUpDate && parseDay(app.followUpDate)) {
+    if (app.followUpDate && plausibleDay(app.followUpDate)) {
       push({ kind: "follow-up", app, date: app.followUpDate, label: `Follow up: ${label}`, days: daysBetween(today, app.followUpDate) });
     }
-    if (app.deadline && parseDay(app.deadline) && stageIndex(app.status) < stageIndex("Applied")) {
+    if (app.deadline && plausibleDay(app.deadline) && stageIndex(app.status) < stageIndex("Applied")) {
       push({ kind: "deadline", app, date: app.deadline, label: `Application deadline: ${label}`, days: daysBetween(today, app.deadline) });
     }
-    if (app.responseDue && parseDay(app.responseDue) && (app.status === "Applied" || app.status === "Interview")) {
+    if (app.responseDue && plausibleDay(app.responseDue) && (app.status === "Applied" || app.status === "Interview")) {
       push({ kind: "response", app, date: app.responseDue, label: `Expected reply: ${label}`, days: daysBetween(today, app.responseDue) });
     }
-    if (app.status === "Offer" && app.offer?.decideBy && parseDay(app.offer.decideBy)) {
+    if (app.status === "Offer" && app.offer?.decideBy && plausibleDay(app.offer.decideBy)) {
       push({ kind: "offer", app, date: app.offer.decideBy, label: `Offer decision due: ${label}`, days: daysBetween(today, app.offer.decideBy) });
     }
     for (const iv of app.interviews ?? []) {
       const when = parseLocalDateTime(iv.at);
-      if (iv.status !== "Scheduled" || !when || !iv.at) continue;
+      if (iv.status !== "Scheduled" || !when || !iv.at || !plausibleDay(iv.at.slice(0, 10))) continue;
       // A scheduled interview whose time has passed is flagged, so you record how it went.
       const days = daysBetween(today, iv.at.slice(0, 10));
       const passed = when.getTime() < now.getTime();

@@ -52,6 +52,27 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport }: 
     }
   }, []);
 
+  function downloadRecovered() {
+    try {
+      const dump: Record<string, unknown> = {};
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i);
+        if (k?.startsWith("cmh:recovered:")) dump[k] = window.localStorage.getItem(k);
+      }
+      const blob = new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "career-match-hub-recovered-data.json";
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      /* storage unavailable */
+    }
+  }
+
   function deleteSnapshots() {
     try {
       clearSnapshots(window.localStorage);
@@ -165,7 +186,10 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport }: 
         </div>
         {recovered && (
           <Notice tone="warn">
-            Some saved data could not be read, so it was set aside instead of deleted. Importing a backup restores it.
+            Some saved data could not be read, so it was set aside instead of deleted. The rest of your data loaded normally.{" "}
+            <button type="button" className="font-semibold underline" onClick={downloadRecovered}>
+              Download the set-aside data
+            </button>
           </Notice>
         )}
         <div className="flex flex-wrap gap-3">
@@ -196,7 +220,7 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport }: 
           <div className="rounded-xl border border-line p-4 text-sm">
             <p className="font-medium">Upgrade copies</p>
             <p className="mt-1 max-w-prose text-muted">
-              Each upgrade saves a copy of your previous data in this browser, and keeps the old single-resume copy so you can return to the previous version of the app. The copies include your old resume text. Delete them once you are happy with the upgrade.
+              Each upgrade saves a copy of your previous data in this browser, and keeps your earlier single resume and earlier saved-jobs list so you can return to the previous version of the app. Deleting these copies ends that option. They include your old resume text. Delete them once you are happy with the upgrade.
             </p>
             {confirmClear ? (
               <div className="mt-3 flex flex-wrap items-center gap-3">
