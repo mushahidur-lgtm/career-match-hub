@@ -37,7 +37,10 @@ import { DEFAULT_REFINE, RefineSchema, refineJobs, type RefineFilters } from "@/
 import { FiltersSchema, PreferencesSchema, ResumeVersionsSchema } from "@/lib/schemas";
 import { fillStructure, lacksStructure } from "@/lib/resume-sections";
 import { nameFromFile } from "@/lib/storage";
+import { mergeContactStores } from "@/lib/contacts/model";
+import { readContacts, stashContacts } from "@/lib/contacts/schema";
 import { retryFailedSaves, useUnsavedKeys } from "@/lib/storage-health";
+import { EMPTY_CONTACTS, type ContactsStore } from "@/types/contacts";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import {
   DEFAULT_FILTERS,
@@ -102,6 +105,17 @@ export default function Home() {
     }
     return r.store;
   }, shrinkIntel);
+  // Recruiter and HR contacts, read entry by entry like applications.
+  const [contactsSkipped, setContactsSkipped] = useState(0);
+  const [contacts, setContacts, , , contactsLost] = usePersistentState<ContactsStore>("cmh:contacts", EMPTY_CONTACTS, (value) => {
+    const r = readContacts(value);
+    if (!r) return undefined;
+    if (r.rejected.length) {
+      stashContacts(r.rejected);
+      setContactsSkipped(r.rejected.length);
+    }
+    return r.store;
+  });
   const [sort, setSort] = usePersistentState<SortKey>("cmh:sort", "score");
   const [refine, setRefine] = usePersistentState<RefineFilters>("cmh:refine", DEFAULT_REFINE, check(RefineSchema));
   const unsaved = useUnsavedKeys();
@@ -112,7 +126,7 @@ export default function Home() {
     const t = setInterval(retryFailedSaves, 4000);
     return () => clearInterval(t);
   }, [stuck]);
-  const recovered = resumesLost || savedLost || skipped > 0 || intelSkipped > 0 || intelLost;
+  const recovered = resumesLost || savedLost || skipped > 0 || intelSkipped > 0 || intelLost || contactsSkipped > 0 || contactsLost;
 
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [loading, setLoading] = useState(false);
@@ -241,12 +255,12 @@ export default function Home() {
   const rereadProfile = (id: string, p: CandidateProfile) => setResumes((list) => list.map((r) => (r.id === id ? { ...r, profile: p } : r)));
 
   /* ----- backup ----- */
-  const appData: AppData = { resumes, activeResumeId: active?.id ?? null, filters, preferences, saved, intel };
+  const appData: AppData = { resumes, activeResumeId: active?.id ?? null, filters, preferences, saved, intel, contacts };
 
   // What cloud sync watches. Search filters are left out on purpose: they change constantly and are per device.
   const syncData = useMemo<AppData>(
-    () => ({ resumes, activeResumeId: active?.id ?? null, filters: DEFAULT_FILTERS, preferences, saved, intel }),
-    [resumes, active, preferences, saved, intel],
+    () => ({ resumes, activeResumeId: active?.id ?? null, filters: DEFAULT_FILTERS, preferences, saved, intel, contacts }),
+    [resumes, active, preferences, saved, intel, contacts],
   );
   // Data arriving from the cloud. It never touches your search filters or your current results.
   const [cloudEpoch, setCloudEpoch] = useState(0);
@@ -260,6 +274,8 @@ export default function Home() {
     setPreferences(d.preferences);
     setSaved(d.saved);
     setIntel(d.intel ?? EMPTY_INTEL);
+    // An older cloud copy has no contacts. Never let that wipe the ones on this device.
+    if (d.contacts) setContacts(d.contacts);
   };
   const cloud = useCloud({ data: syncData, apply: applyCloud, updateIntel: setIntel, intel });
   const importData = (d: AppData, mode: "merge" | "replace") => {
@@ -267,6 +283,7 @@ export default function Home() {
       setSaved((list) => mergeSavedJobs(list, d.saved));
       setResumes((list) => mergeResumes(list, d.resumes));
       if (d.intel) setIntel((store) => mergeIntel(store, d.intel!));
+      if (d.contacts) setContacts((store) => mergeContactStores(store, d.contacts!));
       if (!active && d.resumes[0]) setActiveId(d.activeResumeId ?? d.resumes[0].id);
       return;
     }
@@ -277,6 +294,7 @@ export default function Home() {
     setSaved(mergeSavedJobs([], d.saved));
     // A backup from before search history existed leaves the history you have now alone.
     if (d.intel) setIntel(d.intel);
+    if (d.contacts) setContacts(d.contacts);
     setResults(null);
   };
   const savePreferences = (p: SearchPreferences) => {

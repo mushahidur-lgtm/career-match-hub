@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ContactsStore } from "@/types/contacts";
 import type { IntelStore, ResumeVersion, SavedJob, SearchFilters, SearchPreferences } from "@/types/job";
 import {
   FiltersSchema,
@@ -9,6 +10,7 @@ import {
   SavedJobsSchema,
 } from "./schemas";
 import { duplicateKey } from "./dedupe";
+import { readContacts } from "./contacts/schema";
 import { readIntel } from "./history-load";
 import { LEGACY_VERSION_ID, nameFromFile } from "./storage";
 
@@ -24,6 +26,8 @@ export interface AppData {
   saved: SavedJob[];
   /** Search history. Absent in backups made before it existed. */
   intel?: IntelStore;
+  /** HR and recruiter contacts. Absent in backups made before they existed. */
+  contacts?: ContactsStore;
 }
 
 const DataV2 = z.object({
@@ -34,6 +38,7 @@ const DataV2 = z.object({
   saved: SavedJobsSchema,
   // Checked entry by entry afterwards, so one damaged history entry cannot reject the whole backup.
   intel: z.unknown().optional(),
+  contacts: z.unknown().optional(),
 });
 
 /** Backups made before resume versions existed held a single resume and profile. */
@@ -78,9 +83,11 @@ export function parseBackup(text: string): ParsedBackup {
     // Versions 2 and 3 share a shape. Version 3 adds application fields; older status names are read as the new ones.
     const d = DataV2.safeParse(env.data.data);
     if (!d.success) return damaged(d.error.issues[0]);
-    const { intel: rawIntel, ...rest } = d.data;
+    const { intel: rawIntel, contacts: rawContacts, ...rest } = d.data;
     const intel = rawIntel === undefined ? undefined : readIntel(rawIntel)?.store;
-    return { ok: true, data: { ...(rest as Omit<AppData, "intel">), ...(intel ? { intel } : {}) }, exportedAt: env.data.exportedAt };
+    // Contacts are read one at a time too, so one damaged entry cannot reject the whole backup.
+    const contacts = rawContacts === undefined ? undefined : readContacts(rawContacts)?.store;
+    return { ok: true, data: { ...(rest as Omit<AppData, "intel" | "contacts">), ...(intel ? { intel } : {}), ...(contacts ? { contacts } : {}) }, exportedAt: env.data.exportedAt };
   }
 
   const d = DataV1.safeParse(env.data.data);

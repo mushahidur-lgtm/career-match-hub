@@ -1,5 +1,7 @@
 import { mergeResumes, mergeSavedJobs, type AppData } from "@/lib/backup";
+import { mergeContactStores } from "@/lib/contacts/model";
 import { EMPTY_INTEL, mergeIntel } from "@/lib/history";
+import { EMPTY_CONTACTS } from "@/types/contacts";
 
 /**
  * Decisions for keeping two copies of your data in step. Nothing here touches storage or the network,
@@ -60,11 +62,12 @@ export function mergeAppData(local: AppData, cloud: AppData): AppData {
     preferences: local.preferences,
     saved: mergeSavedJobs(local.saved, cloud.saved),
     intel: mergeIntel(local.intel ?? EMPTY_INTEL, cloud.intel ?? EMPTY_INTEL),
+    contacts: mergeContactStores(local.contacts ?? EMPTY_CONTACTS, cloud.contacts ?? EMPTY_CONTACTS),
   };
 }
 
 export const isEmptyData = (d: AppData): boolean =>
-  d.resumes.length === 0 && d.saved.length === 0 && (d.intel?.history.length ?? 0) === 0 && (d.intel?.seen.length ?? 0) === 0;
+  d.resumes.length === 0 && d.saved.length === 0 && (d.intel?.history.length ?? 0) === 0 && (d.intel?.seen.length ?? 0) === 0 && (d.contacts?.contacts.length ?? 0) === 0 && (d.contacts?.deletedIds.length ?? 0) === 0;
 
 /**
  * A short fingerprint of what is synced, so a change can be noticed. Order does not matter, and the search filters
@@ -79,6 +82,9 @@ export function hashData(d: AppData): string {
     saved: by(d.saved, (s) => s.job.id),
     history: by(d.intel?.history ?? [], (h) => h.id),
     seen: by(d.intel?.seen ?? [], (j) => j.key),
+    // Saved contacts and deletions are synced. Cached lookups (finds) are not part of the fingerprint.
+    contacts: by(d.contacts?.contacts ?? [], (c) => c.id),
+    deleted: [...(d.contacts?.deletedIds ?? [])].sort(),
   });
   let h = 5381;
   for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;

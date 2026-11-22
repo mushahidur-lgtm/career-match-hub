@@ -397,3 +397,65 @@ describe("networking numbers", () => {
     expect(networkingStats([])).toMatchObject({ total: 0, requested: 0, acceptRate: null, replyRate: null });
   });
 });
+
+/* ---------- storage, backups and sync ---------- */
+
+import { readContacts } from "@/lib/contacts/schema";
+import { buildBackup, parseBackup, type AppData } from "@/lib/backup";
+import { hashData, isEmptyData, mergeAppData } from "@/lib/cloud/sync";
+import { DEFAULT_FILTERS, DEFAULT_PREFERENCES } from "@/types/job";
+
+const appData = (over: Partial<AppData> = {}): AppData => ({ resumes: [], activeResumeId: null, filters: DEFAULT_FILTERS, preferences: DEFAULT_PREFERENCES, saved: [], ...over });
+
+describe("reading stored contacts", () => {
+  it("keeps readable entries and returns the damaged ones, with no duplicate ids", () => {
+    const good = person();
+    const r = readContacts({ contacts: [good, { nonsense: true }, { ...good }], deletedIds: ["x", 5], finds: [{ bad: 1 }] })!;
+    expect(r.store.contacts).toHaveLength(1);
+    expect(r.store.deletedIds).toEqual(["x"]);
+    expect(r.rejected).toHaveLength(3);
+  });
+  it("rejects something that is not a store", () => {
+    expect(readContacts([])).toBeUndefined();
+    expect(readContacts({ contacts: "x" })).toBeUndefined();
+  });
+  it("a saved contact survives a round trip through JSON", () => {
+    const c = person({ activities: [newActivity({ type: "Note", notes: "hello" }, now)], nextFollowUp: "2026-12-01" });
+    const r = readContacts(JSON.parse(JSON.stringify({ contacts: [c], deletedIds: [], finds: [] })))!;
+    expect(r.rejected).toEqual([]);
+    expect(r.store.contacts[0]).toEqual(c);
+  });
+});
+
+describe("contacts in backups and sync", () => {
+  it("round-trips through a backup, and a damaged contact does not reject the backup", () => {
+    const c = person();
+    const store: ContactsStore = { contacts: [c], deletedIds: ["gone"], finds: [] };
+    const ok = parseBackup(buildBackup(appData({ contacts: store })));
+    expect(ok.ok && ok.data.contacts?.contacts).toHaveLength(1);
+    const damaged = { ...store, contacts: [c, { broken: true }] } as unknown as ContactsStore;
+    const r = parseBackup(buildBackup(appData({ contacts: damaged })));
+    expect(r.ok && r.data.contacts?.contacts).toHaveLength(1);
+    const none = parseBackup(buildBackup(appData()));
+    expect(none.ok && none.data.contacts).toBeUndefined();
+  });
+  it("counts contacts when deciding whether data is empty, and changes the fingerprint when one changes", () => {
+    expect(isEmptyData(appData())).toBe(true);
+    const withContact = appData({ contacts: { contacts: [person()], deletedIds: [], finds: [] } });
+    expect(isEmptyData(withContact)).toBe(false);
+    expect(hashData(withContact)).not.toBe(hashData(appData()));
+    const edited = appData({ contacts: { contacts: [person({ notes: "changed" })], deletedIds: [], finds: [] } });
+    expect(hashData(edited)).not.toBe(hashData(withContact));
+    // A cached lookup is not a change worth saving.
+    const cached = appData({ contacts: { ...withContact.contacts!, finds: [{ id: "f", jobKey: "k", jobTitle: "t", company: "c", location: "", at: "2026-11-22", searched: { posting: true, web: false }, candidates: [], note: null }] } });
+    expect(hashData(cached)).toBe(hashData(withContact));
+  });
+  it("combines two devices' contacts and never revives a deletion", () => {
+    const c = person();
+    const local = appData({ contacts: { contacts: [], deletedIds: [c.id], finds: [] } });
+    const cloud = appData({ contacts: { contacts: [c, person({ name: "Omar Ali", company: "Globex" })], deletedIds: [], finds: [] } });
+    const merged = mergeAppData(local, cloud);
+    expect(merged.contacts?.contacts.map((x) => x.name)).toEqual(["Omar Ali"]);
+    expect(merged.contacts?.deletedIds).toEqual([c.id]);
+  });
+});
