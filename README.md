@@ -4,8 +4,9 @@ Upload your resume, see which jobs fit your skills, and track every application 
 
 - **Resume versions and a real profile.** Keep several resumes (one per kind of role) and choose which one matching uses. Each is read into a profile you can edit: dated work history, education, certifications, skills, level and years of experience. Claude does the reading when a key is set, and a keyword parser does it otherwise. Anything Claude lists that the resume text does not contain is dropped, so the profile never claims experience you do not have.
 - **Overview.** Key numbers, best matches, newly posted jobs, highest salaries, applications that need attention and trending skills, all computed from your latest search and the jobs you track. Nothing on it is made up, and a number with no data behind it is left out.
-- **Discover jobs.** Filter by title, city, category, work mode (Remote, Hybrid, On-site), employment type (Full-time, Contract, Part-time) and minimum salary.
+- **Discover jobs.** Search by title and city, then refine the results without searching again: minimum match score, salary range, location, work arrangement, employment type, category, seniority, posted date, company, title and application status. Results show salary, posting age, match score and confidence, and your status, are paged 15 at a time, and export to CSV. Listings of the same posting from different boards are merged into one. A posting more than 30 days old is flagged as possibly closed; a missing posting date is shown as such and never guessed.
 - **Transparent match scoring.** Every job gets a 0 to 100 score built from six weighted parts you can inspect and re-weight, with required versus preferred skills, related skills, resume evidence, gaps, a confidence level and a plain explanation. 90 and above is green, 70 to 89 is blue, below 70 is amber.
+- **Job details in five tabs.** Overview, Job description (with the required and preferred skills read from it), Match analysis, Resume recommendations and Application. Resume recommendations quote the lines from your resume to lead with, the keywords on your profile that your resume never names, lines that lack a result, projects to put forward, and the gaps stated honestly. The Application tab has your status, notes, the apply link and a preparation summary. With a Claude key you can also ask for reworded lines and a tailored summary; every line Claude quotes is checked against your resume, and a rewrite that adds a skill you have not listed or a number that was not in your line is removed.
 - **My applications.** Save jobs, move them through Saved, Applied, Interviewing, Offer and Rejected, add notes, and export to CSV.
 - **Honest about its data.** Jobs come only from a connected job board (Adzuna or JSearch). With no job-board key a deployed site shows no jobs and says so. `npm run dev` shows clearly labelled sample jobs for development only. Resume analysis falls back to a keyword engine when there is no Claude key.
 - **Built for a permanent full-time search.** The default filter is Permanent full-time with a CAD $100,000 minimum. Jobs that state a lower salary are hidden, jobs that state none stay and are marked Salary unknown, and salaries a job board only estimated never hide a job. Edit your cities, roles and minimum in Settings.
@@ -107,6 +108,7 @@ Scores are guidance about fit. They do not predict hiring decisions.
 ## Privacy
 
 - Your resume versions, profiles, filters, results and saved jobs live in your browser's `localStorage`. Nothing is stored on the server and there is no database.
+- Tailored suggestions are sent to Anthropic only when you press the button on a job: the posting and your resume text. The result is cached in this browser (the last 20 jobs) so it is not requested again.
 - Upgrades save a snapshot of your previous data in the same browser storage, and keep the old single-resume copy so you can return to the previous release without losing anything. Those copies include your old resume text. Settings has a button to delete them once you are happy.
 - Uploaded files are parsed in memory on the server and discarded.
 - With `ANTHROPIC_API_KEY` set, your resume text and the job postings in view are sent to Anthropic for analysis and scoring.
@@ -159,6 +161,7 @@ src/
       parse-resume/route.ts       PDF, DOCX, TXT and MD text extraction
       analyze-resume/route.ts     Claude profile extraction, keyword fallback
       search-jobs/route.ts        Provider search, filtering, AI match scoring
+      job-insights/route.ts       Tailored resume suggestions, checked against the resume
       status/route.ts             Which features are live (no key values)
   components/
     AppShell.tsx                  Sidebar navigation (top bar on phones)
@@ -167,7 +170,9 @@ src/
     MatchBreakdown.tsx            Score breakdown shown in the job dialog
     SettingsPanel.tsx             Preferences, match weights, backup and restore
     SearchFilters.tsx             City, role, work mode, employment type, salary
-    JobCard.tsx                   Job card and match analysis dialog
+    JobCard.tsx                   Job card
+    JobDetailDialog.tsx           Five-tab job detail view
+    ResultFilters.tsx             Refine-results panel
     SavedJobsBoard.tsx            Tracker, notes, CSV export
     StatusBanner.tsx, ui.tsx      Live/Demo banner and shared pieces
   lib/
@@ -176,6 +181,9 @@ src/
     resume-sections.ts            Work history, education and certification parsing
     ai-profile.ts                 Turns Claude's reading into a verified profile
     overview.ts                   Overview numbers
+    refine.ts, dedupe.ts          Result filters and duplicate merging
+    job-meta.ts                   Posting age and level
+    resume-help.ts, insights.ts   Resume recommendations and the checks on Claude's suggestions
     storage.ts, backup.ts         Versioned storage, migrations, backup and import
     heuristics.ts, skills.ts      Keyword profile and the skills dictionary
     providers/                    adzuna.ts, jsearch.ts, demo.ts, shared helpers

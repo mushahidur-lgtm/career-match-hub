@@ -12,7 +12,7 @@ import { EMPLOYMENT_FILTERS, JOB_CATEGORIES, WORK_MODES, type Job, type SearchRe
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
-const MAX_RESULTS = 40;
+const MAX_RESULTS = 60;
 /** Jobs Claude reviews in one call. Every job is scored by the rules; Claude refines the best ones. */
 const AI_BATCH = 15;
 const RESUME_CHARS = 14_000;

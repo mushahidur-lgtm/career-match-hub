@@ -196,6 +196,10 @@ export interface Job {
   applyUrl: string | null;
   source: JobSource;
   match: MatchResult | null;
+  /** How many other listings of this same posting were merged into this one. */
+  duplicateCount?: number;
+  /** Apply links from the merged listings, in case this one has expired. */
+  otherApplyUrls?: string[];
 }
 
 export interface SearchFilters {
@@ -264,7 +268,7 @@ export const LOCATION_PRESETS = [
   "Remote - Anywhere",
 ] as const;
 
-export type SortKey = "score" | "newest" | "salary";
+export type SortKey = "score" | "newest" | "salary" | "company";
 
 export interface SearchResponse {
   jobs: Job[];

@@ -34,6 +34,7 @@ export function sortJobs(jobs: Job[], key: SortKey): Job[] {
   const date = (j: Job) => (j.postedAt ? Date.parse(j.postedAt) || 0 : 0);
   if (key === "newest") copy.sort((a, b) => date(b) - date(a));
   else if (key === "salary") copy.sort((a, b) => (yearlySalary(b) ?? -1) - (yearlySalary(a) ?? -1));
+  else if (key === "company") copy.sort((a, b) => a.company.localeCompare(b.company));
   else copy.sort((a, b) => (b.match?.score ?? -1) - (a.match?.score ?? -1));
   return copy;
 }
@@ -42,7 +43,7 @@ export type ScoreTone = "good" | "info" | "warn";
 export const scoreTone = (score: number): ScoreTone => (score >= 90 ? "good" : score >= 70 ? "info" : "warn");
 
 /** Stops a spreadsheet from running a cell that starts with a formula character. */
-function csvCell(value: unknown): string {
+export function csvCell(value: unknown): string {
   let s = value === null || value === undefined ? "" : String(value);
   if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return `"${s.replace(/"/g, '""')}"`;

@@ -158,6 +158,8 @@ export const JobSchema = z.object({
   applyUrl: str(2000).nullable(),
   source: z.enum(["adzuna", "jsearch", "demo"]),
   match: MatchSchema.nullable(),
+  duplicateCount: z.number().int().min(0).max(1000).optional(),
+  otherApplyUrls: z.array(str(2000)).max(5).optional(),
 });
 
 export const SavedJobSchema = z.object({

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Download, ExternalLink, Trash2 } from "lucide-react";
 import { formatSalary, savedJobsToCsv } from "@/lib/format";
 import { APPLICATION_STATUSES, type ApplicationStatus, type SavedJob } from "@/types/job";
-import { safeUrl } from "./JobCard";
+import { safeUrl } from "./job-parts";
 import { Badge, ScoreBadge, inputClass, secondaryButton } from "./ui";
 
 interface Props {

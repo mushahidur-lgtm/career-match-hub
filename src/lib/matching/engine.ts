@@ -65,7 +65,7 @@ export function normalizeWeights(w: Partial<MatchWeights> | undefined): MatchWei
 const LEVEL: Record<Seniority, number> = { Entry: 0, Junior: 1, "Mid-level": 2, Senior: 3, Lead: 4, Manager: 4, Principal: 5, Executive: 6 };
 const LEVEL_NAME = ["entry-level", "junior", "mid-level", "senior", "lead", "principal", "executive"];
 
-function titleLevel(title: string): number | null {
+export function titleLevel(title: string): number | null {
   if (/\b(intern|co-?op|entry)\b/i.test(title)) return 0;
   if (/\b(junior|jr)\b/i.test(title)) return 1;
   if (/\b(intermediate|mid)\b/i.test(title)) return 2;
@@ -74,7 +74,7 @@ function titleLevel(title: string): number | null {
   if (/\b(principal|staff|architect|director)\b/i.test(title)) return 5;
   return null;
 }
-const levelFromYears = (y: number) => (y >= 8 ? 4 : y >= 5 ? 3 : y >= 3 ? 2 : 1);
+export const levelFromYears = (y: number) => (y >= 8 ? 4 : y >= 5 ? 3 : y >= 3 ? 2 : 1);
 
 /* ---------- role similarity ---------- */
 

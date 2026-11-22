@@ -7,6 +7,7 @@ import type {
   WorkMode,
 } from "@/types/job";
 
+import { mergeDuplicates } from "@/lib/dedupe";
 import { yearlySalary } from "@/lib/format";
 
 export class ProviderError extends Error {}
@@ -124,13 +125,5 @@ export async function fetchJson<T>(url: string, init: RequestInit = {}, label: s
   }
 }
 
-export function dedupeJobs(jobs: Job[]): Job[] {
-  const seen = new Set<string>();
-  return jobs.filter((j) => {
-    const key = `${j.title}|${j.company}|${j.location}`.toLowerCase();
-    if (seen.has(key) || seen.has(j.id)) return false;
-    seen.add(key);
-    seen.add(j.id);
-    return true;
-  });
-}
+/** Merges listings of the same posting. See lib/dedupe.ts. */
+export const dedupeJobs = mergeDuplicates;

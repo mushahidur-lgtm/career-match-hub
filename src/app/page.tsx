@@ -1,21 +1,26 @@
 "use client";
 
+import { Download } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { AppShell, normalizeTab, type Tab } from "@/components/AppShell";
-import { JobCard, JobDetailDialog } from "@/components/JobCard";
+import { JobCard } from "@/components/JobCard";
+import { DetailContext, JobDetailDialog } from "@/components/JobDetailDialog";
 import { Overview } from "@/components/Overview";
+import { ResultFilters } from "@/components/ResultFilters";
 import { ResumeManager } from "@/components/ResumeManager";
 import { SavedJobsBoard } from "@/components/SavedJobsBoard";
 import { SearchFilters } from "@/components/SearchFilters";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { StatusBanner } from "@/components/StatusBanner";
-import { Notice, inputClass } from "@/components/ui";
+import { Notice, inputClass, secondaryButton } from "@/components/ui";
 import { jobKey, mergeResumes, mergeSavedJobs, type AppData } from "@/lib/backup";
+import { jobsToCsv } from "@/lib/export";
 import { sortJobs } from "@/lib/format";
 import { profileSkills } from "@/lib/heuristics";
 import { newId, uniqueName } from "@/lib/ids";
 import { computeOverview } from "@/lib/overview";
+import { DEFAULT_REFINE, RefineSchema, refineJobs, type RefineFilters } from "@/lib/refine";
 import { FiltersSchema, PreferencesSchema, ResumeVersionsSchema, SavedJobsSchema } from "@/lib/schemas";
 import { fillStructure, lacksStructure } from "@/lib/resume-sections";
 import { nameFromFile } from "@/lib/storage";
@@ -61,6 +66,7 @@ export default function Home() {
   const [results, setResults] = usePersistentState<StoredResults | null>("cmh:results", null);
   const [saved, setSaved, , , savedLost] = usePersistentState<SavedJob[]>("cmh:saved", [], check(SavedJobsSchema));
   const [sort, setSort] = usePersistentState<SortKey>("cmh:sort", "score");
+  const [refine, setRefine] = usePersistentState<RefineFilters>("cmh:refine", DEFAULT_REFINE, check(RefineSchema));
   const recovered = resumesLost || savedLost;
 
   const [status, setStatus] = useState<AppStatus | null>(null);
@@ -94,7 +100,29 @@ export default function Home() {
   const profile: CandidateProfile | null = active?.profile ?? null;
 
   const savedById = useMemo(() => new Map(saved.map((s) => [s.job.id, s])), [saved]);
-  const sorted = useMemo(() => (results ? sortJobs(results.jobs, sort) : []), [results, sort]);
+  const savedByKey = useMemo(() => new Map(saved.map((s) => [jobKey(s.job), s])), [saved]);
+  const statusOf = useCallback((job: Job) => savedByKey.get(jobKey(job))?.status ?? null, [savedByKey]);
+  const refined = useMemo(() => (results ? refineJobs(results.jobs, refine, { statusOf }) : []), [results, refine, statusOf]);
+  const sorted = useMemo(() => sortJobs(refined, sort), [refined, sort]);
+
+  // Pagination. The page size resets whenever the search, the filters or the sort change.
+  const PAGE_SIZE = 15;
+  const pageKey = JSON.stringify([results?.searchedAt, refine, sort]);
+  const [pager, setPager] = useState({ key: pageKey, count: PAGE_SIZE });
+  const shownCount = pager.key === pageKey ? pager.count : PAGE_SIZE;
+  const showMore = () => setPager({ key: pageKey, count: shownCount + PAGE_SIZE });
+
+  const exportResults = () => {
+    const blob = new Blob([jobsToCsv(sorted, statusOf)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `career-match-hub-results-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
   const stats = useMemo(() => computeOverview(results, saved), [results, saved]);
   const stale = Boolean(results && active && results.profileKey !== scoreKeyOf(active, preferences));
 
@@ -180,7 +208,10 @@ export default function Home() {
 
   const provider = results ? results.provider : status?.jobProvider;
 
+  const detailContext = { resume: active, aiAvailable: status?.ai ?? false, onNotes: setJobNotes };
+
   return (
+    <DetailContext.Provider value={detailContext}>
     <AppShell tab={tab} onTab={setTab} counts={{ applications: saved.length }} status={<StatusBanner status={status} results={results} />}>
       {recovered && (
         <Notice tone="warn">
@@ -262,7 +293,11 @@ export default function Home() {
                       <option value="score">Highest match</option>
                       <option value="newest">Newest</option>
                       <option value="salary">Highest salary</option>
+                      <option value="company">Company A to Z</option>
                     </select>
+                    <button type="button" className={secondaryButton} onClick={exportResults} disabled={sorted.length === 0}>
+                      <Download className="size-4" aria-hidden /> Export CSV
+                    </button>
                   </div>
                 </div>
                 {results.warnings.map((w) => (
@@ -278,9 +313,20 @@ export default function Home() {
                     </button>
                   </Notice>
                 )}
+                {results.jobs.length > 0 && <ResultFilters value={refine} onChange={setRefine} total={results.jobs.length} shown={sorted.length} />}
                 {sorted.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-line px-6 py-12">
-                    {results.mode === "unconfigured" ? (
+                    {results.jobs.length > 0 ? (
+                      <>
+                        <h3 className="font-display text-lg font-semibold">No jobs match your filters</h3>
+                        <p className="mt-2 max-w-prose text-sm text-muted">
+                          {results.jobs.length} {results.jobs.length === 1 ? "job was" : "jobs were"} found, and your filters hide all of them.
+                        </p>
+                        <button type="button" className={`${secondaryButton} mt-4`} onClick={() => setRefine(DEFAULT_REFINE)}>
+                          Clear filters
+                        </button>
+                      </>
+                    ) : results.mode === "unconfigured" ? (
                       <>
                         <h3 className="font-display text-lg font-semibold">No job source is connected</h3>
                         <p className="mt-2 max-w-prose text-sm text-muted">This site does not invent job listings. Add ADZUNA_APP_ID and ADZUNA_APP_KEY, or RAPIDAPI_KEY, in the deployment settings to search real postings.</p>
@@ -293,13 +339,25 @@ export default function Home() {
                     )}
                   </div>
                 ) : (
-                  <ul className="space-y-4">
-                    {sorted.map((job) => (
-                      <li key={job.id}>
-                        <JobCard job={job} saved={savedById.get(job.id)} onSave={saveJob} onStatus={setJobStatus} onRemove={removeJob} />
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    <ul className="space-y-4">
+                      {sorted.slice(0, shownCount).map((job) => (
+                        <li key={job.id}>
+                          <JobCard job={job} saved={savedByKey.get(jobKey(job)) ?? savedById.get(job.id)} onSave={saveJob} onStatus={setJobStatus} onRemove={removeJob} />
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="flex flex-col items-center gap-2 pt-2">
+                      <p className="text-sm text-muted" aria-live="polite">
+                        Showing {Math.min(shownCount, sorted.length)} of {sorted.length}
+                      </p>
+                      {shownCount < sorted.length && (
+                        <button type="button" className={secondaryButton} onClick={showMore}>
+                          Show {Math.min(PAGE_SIZE, sorted.length - shownCount)} more
+                        </button>
+                      )}
+                    </div>
+                  </>
                 )}
               </section>
             )}
@@ -322,5 +380,6 @@ export default function Home() {
         />
       )}
     </AppShell>
+    </DetailContext.Provider>
   );
 }
