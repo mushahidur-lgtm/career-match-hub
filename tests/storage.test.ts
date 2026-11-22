@@ -149,8 +149,8 @@ describe("upgrade to resume versions", () => {
     const s = atV2();
     migrateStorage(s);
     expect(hasSnapshots(s)).toBe(true);
-    // The snapshot, plus the two old single-resume copies that are now only leftovers.
-    expect(clearSnapshots(s)).toBe(3);
+    // Two snapshots (one per upgrade step), plus the two old single-resume copies that are now only leftovers.
+    expect(clearSnapshots(s)).toBe(4);
     expect(hasSnapshots(s)).toBe(false);
     expect(s.getItem("cmh:resumes")).not.toBeNull();
     expect(s.getItem("cmh:resume")).toBeNull();

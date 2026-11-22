@@ -3,8 +3,10 @@
 import type { ReactNode } from "react";
 import { ArrowRight, Check, Circle } from "lucide-react";
 import { formatPosted, formatSalary } from "@/lib/format";
+import type { Reminder } from "@/lib/applications";
 import type { AttentionItem, Opportunity, OverviewStats } from "@/lib/overview";
 import type { Job, ProviderStatus } from "@/types/job";
+import type { ApplicationTab } from "./ApplicationDialog";
 import type { Tab } from "./AppShell";
 import { Badge, ScoreBadge, primaryButton, secondaryButton } from "./ui";
 
@@ -14,10 +16,11 @@ interface Props {
   provider: ProviderStatus | undefined;
   hasSearched: boolean;
   onOpenJob: (job: Job) => void;
+  onOpenApplication: (id: string, tab?: ApplicationTab) => void;
   onGo: (tab: Tab) => void;
 }
 
-export function Overview({ stats, resumeName, provider, hasSearched, onOpenJob, onGo }: Props) {
+export function Overview({ stats, resumeName, provider, hasSearched, onOpenJob, onOpenApplication, onGo }: Props) {
   const sourceConnected = provider === "adzuna" || provider === "jsearch";
   const sampleOnly = provider === "demo";
   const started = Boolean(resumeName) && hasSearched;
@@ -33,13 +36,29 @@ export function Overview({ stats, resumeName, provider, hasSearched, onOpenJob, 
 
       {!started && <GetStarted hasResume={Boolean(resumeName)} sourceConnected={sourceConnected} sampleOnly={sampleOnly} hasSearched={hasSearched} onGo={onGo} />}
 
-      <section aria-label="Key numbers" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+      <section aria-label="Key numbers" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Kpi label="Active opportunities" value={stats.activeOpportunities} />
         <Kpi label="Excellent matches (90+)" value={stats.excellent} tone="good" />
         <Kpi label="Strong matches (70 to 89)" value={stats.strong} tone="info" />
         <Kpi label="Applications sent" value={stats.applicationsSent} />
         <Kpi label="In interviews" value={stats.interviews} />
+        <Kpi label="Follow-ups due" value={stats.followUpsDue} tone={stats.followUpsDue > 0 ? "warn" : undefined} />
       </section>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <ReminderPanel
+          title="Upcoming interviews"
+          empty="No interviews in the next week. Add one from an application's Interviews tab."
+          reminders={stats.upcomingInterviews}
+          onOpen={(r) => onOpenApplication(r.app.job.id, "interviews")}
+        />
+        <ReminderPanel
+          title="Follow-ups and deadlines"
+          empty="Nothing is due in the next week. Follow-ups, deadlines, expected replies and offer decisions appear here."
+          reminders={stats.reminders.filter((r) => r.kind !== "interview")}
+          onOpen={(r) => onOpenApplication(r.app.job.id, "details")}
+        />
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Panel title="Best matching opportunities" empty="Run a search to see your best matches." items={stats.best} onOpenJob={onOpenJob} action={{ label: "Open Discover", onClick: () => onGo("discover") }}>
@@ -104,8 +123,8 @@ export function Overview({ stats, resumeName, provider, hasSearched, onOpenJob, 
   );
 }
 
-function Kpi({ label, value, tone }: { label: string; value: number; tone?: "good" | "info" }) {
-  const color = tone === "good" ? "text-good" : tone === "info" ? "text-info" : "text-ink";
+function Kpi({ label, value, tone }: { label: string; value: number; tone?: "good" | "info" | "warn" }) {
+  const color = tone === "good" ? "text-good" : tone === "info" ? "text-info" : tone === "warn" ? "text-warn" : "text-ink";
   return (
     <div className="rounded-xl border border-line bg-surface p-4">
       <p className="text-xs font-medium text-muted">{label}</p>
@@ -223,6 +242,31 @@ function GetStarted({ hasResume, sourceConnected, sampleOnly, hasSearched, onGo 
           </li>
         ))}
       </ol>
+    </section>
+  );
+}
+
+function ReminderPanel({ title, empty, reminders, onOpen }: { title: string; empty: string; reminders: Reminder[]; onOpen: (r: Reminder) => void }) {
+  const id = `rem-${title.replace(/\W+/g, "-").toLowerCase()}`;
+  return (
+    <section aria-labelledby={id} className="rounded-xl border border-line bg-surface p-5">
+      <h2 id={id} className="font-display text-base font-semibold">
+        {title}
+      </h2>
+      {reminders.length === 0 ? (
+        <p className="mt-3 text-sm text-muted">{empty}</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-line">
+          {reminders.slice(0, 6).map((r) => (
+            <li key={r.id}>
+              <button type="button" onClick={() => onOpen(r)} className="flex w-full items-center justify-between gap-3 py-3 text-left" aria-label={`${r.label}. ${r.when}`}>
+                <span className="min-w-0 text-sm font-medium hover:underline">{r.label}</span>
+                <Badge tone={r.overdue ? "warn" : "neutral"}>{r.when}</Badge>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

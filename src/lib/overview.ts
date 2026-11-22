@@ -1,5 +1,6 @@
 import { jobKey } from "@/lib/backup";
 import { yearlySalary } from "@/lib/format";
+import { computeReminders, followUpsDue, isActive, isBeforeApplied, wasSent, type Reminder } from "@/lib/applications";
 import type { ApplicationStatus, Job, SavedJob, StoredResults } from "@/types/job";
 
 /** A job you could still act on, with your status for it if you track it. */
@@ -23,6 +24,12 @@ export interface OverviewStats {
   /** Applied, interviewing, offer and rejected: every application that went out. */
   applicationsSent: number;
   interviews: number;
+  /** Follow-ups due today or overdue. */
+  followUpsDue: number;
+  /** Everything due soon, most urgent first. */
+  reminders: Reminder[];
+  /** Interviews coming up, soonest first. */
+  upcomingInterviews: Reminder[];
   best: Opportunity[];
   newlyDiscovered: Opportunity[];
   highestSalary: Opportunity[];
@@ -33,7 +40,6 @@ export interface OverviewStats {
 }
 
 const DAY = 86_400_000;
-const SENT: ApplicationStatus[] = ["Applied", "Interviewing", "Offer", "Rejected"];
 
 const daysBetween = (from: string, now: Date) => Math.max(0, Math.floor((now.getTime() - Date.parse(from)) / DAY));
 
@@ -49,10 +55,10 @@ export function computeOverview(results: StoredResults | null, saved: SavedJob[]
   }
 
   const all = [...byKey.values()];
-  const opportunities = all.filter((o) => o.status !== "Rejected");
+  const opportunities = all.filter((o) => o.status === null || isActive(o.status));
   const score = (o: Opportunity) => o.job.match?.score ?? -1;
 
-  const open = (o: Opportunity) => o.status === null || o.status === "Saved";
+  const open = (o: Opportunity) => o.status === null || isBeforeApplied(o.status);
   const best = opportunities.filter((o) => open(o) && o.job.match).sort((a, b) => score(b) - score(a)).slice(0, 5);
 
   const newlyDiscovered = (results?.jobs ?? [])
@@ -71,13 +77,15 @@ export function computeOverview(results: StoredResults | null, saved: SavedJob[]
     const idle = daysBetween(s.updatedAt, now);
     const o: Opportunity = { job: s.job, status: s.status };
     if (s.status === "Offer") attention.push({ ...o, reason: "You have an offer. Decide and reply.", priority: 0 });
-    else if (s.status === "Interviewing" && idle >= 5) attention.push({ ...o, reason: `Interview stage with no update for ${idle} days.`, priority: 1 });
+    else if (s.status === "Interview" && idle >= 5) attention.push({ ...o, reason: `Interview stage with no update for ${idle} days.`, priority: 1 });
     else if (s.status === "Applied" && idle >= 7) attention.push({ ...o, reason: `Applied ${idle} days ago with no update. A follow-up may be due.`, priority: 2 });
-    else if (s.status === "Saved" && (s.job.match?.score ?? 0) >= 90 && daysBetween(s.savedAt, now) >= 2) {
+    else if (isBeforeApplied(s.status) && (s.job.match?.score ?? 0) >= 90 && daysBetween(s.savedAt, now) >= 2) {
       attention.push({ ...o, reason: "An excellent match you have saved but not applied to.", priority: 3 });
     }
   }
   attention.sort((a, b) => a.priority - b.priority);
+
+  const reminders = computeReminders(saved, now);
 
   const counts = new Map<string, number>();
   let sample = 0;
@@ -98,8 +106,11 @@ export function computeOverview(results: StoredResults | null, saved: SavedJob[]
     activeOpportunities: opportunities.length,
     excellent: opportunities.filter((o) => score(o) >= 90).length,
     strong: opportunities.filter((o) => score(o) >= 70 && score(o) < 90).length,
-    applicationsSent: all.filter((o) => o.status !== null && SENT.includes(o.status)).length,
-    interviews: all.filter((o) => o.status === "Interviewing").length,
+    applicationsSent: saved.filter((a) => wasSent(a)).length,
+    interviews: saved.filter((a) => a.status === "Interview").length,
+    followUpsDue: followUpsDue(reminders).length,
+    reminders,
+    upcomingInterviews: reminders.filter((r) => r.kind === "interview"),
     best,
     newlyDiscovered,
     highestSalary,

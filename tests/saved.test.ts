@@ -19,10 +19,10 @@ describe("finding the tracked entry for a listing", () => {
 describe("saving never creates a second application for the same posting", () => {
   const list = [makeSaved(tracked)];
   it("ignores the same posting under another id and wording", () => {
-    expect(addSavedJob(list, reposted, "Saved", now)).toHaveLength(1);
+    expect(addSavedJob(list, reposted, "Interested", now)).toHaveLength(1);
   });
   it("ignores the exact same listing", () => {
-    expect(addSavedJob(list, tracked, "Saved", now)).toHaveLength(1);
+    expect(addSavedJob(list, tracked, "Interested", now)).toHaveLength(1);
   });
   it("adds a genuinely different job at the top", () => {
     const next = addSavedJob(list, makeJob({ id: "g", company: "Globex" }), "Applied", now);
@@ -33,20 +33,20 @@ describe("saving never creates a second application for the same posting", () =>
   it("two jobs from unknown employers are both kept", () => {
     const a = makeJob({ id: "u1", company: "Company not listed" });
     const b = makeJob({ id: "u2", company: "Company not listed" });
-    expect(addSavedJob(addSavedJob([], a, "Saved", now), b, "Saved", now)).toHaveLength(2);
+    expect(addSavedJob(addSavedJob([], a, "Interested", now), b, "Interested", now)).toHaveLength(2);
   });
 });
 
 describe("changing a tracked job reaches the entry even when the listing on screen has a different id", () => {
-  const list = [makeSaved(tracked, { status: "Saved", notes: "first" })];
+  const list = [makeSaved(tracked, { status: "Interested", notes: "first" })];
   // The card shows `reposted`, finds the entry, and acts on the entry's own id.
   const entry = findSaved(list, reposted)!;
 
-  it("status", () => expect(setSavedStatus(list, entry.job.id, "Interviewing", now)[0].status).toBe("Interviewing"));
+  it("status", () => expect(setSavedStatus(list, entry.job.id, "Interview", now)[0].status).toBe("Interview"));
   it("notes are kept, not dropped", () => expect(setSavedNotes(list, entry.job.id, "Phone screen Tuesday", now)[0].notes).toBe("Phone screen Tuesday"));
   it("remove", () => expect(removeSavedJob(list, entry.job.id)).toEqual([]));
   it("acting on the id of the listing on screen would have done nothing, which is why the entry's id is used", () => {
-    expect(setSavedStatus(list, reposted.id, "Interviewing", now)[0].status).toBe("Saved");
+    expect(setSavedStatus(list, reposted.id, "Interview", now)[0].status).toBe("Interested");
   });
   it("only the targeted entry changes and its time is updated", () => {
     const two = [...list, makeSaved(makeJob({ id: "other", company: "Globex" }))];

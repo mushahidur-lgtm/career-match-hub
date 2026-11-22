@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ExternalLink, Quote, Sparkles, X } from "lucide-react";
+import { isBeforeApplied } from "@/lib/applications";
 import { formatSalary } from "@/lib/format";
 import type { JobInsights } from "@/lib/insights";
 import { loadInsights, insightsKey, saveInsights } from "@/lib/insights-cache";
@@ -27,12 +28,14 @@ const TABS: { id: DetailTab; label: string }[] = [
 export interface DetailContextValue {
   /** The resume version used for matching. */
   resume: ResumeVersion | null;
+  /** Every saved resume version. */
+  resumes: ResumeVersion[];
   /** True when an Anthropic key is configured, so tailored suggestions can be requested. */
   aiAvailable: boolean;
   onNotes: (jobId: string, notes: string) => void;
 }
 
-export const DetailContext = createContext<DetailContextValue>({ resume: null, aiAvailable: false, onNotes: () => undefined });
+export const DetailContext = createContext<DetailContextValue>({ resume: null, resumes: [], aiAvailable: false, onNotes: () => undefined });
 
 interface Props extends JobActions {
   job: Job;
@@ -217,7 +220,7 @@ function OverviewTab({ job }: { job: Job }) {
         <Fact label="Salary">{formatSalary(job.salary)}</Fact>
         <Fact label="Level asked">{levelBucket(job)}</Fact>
         <Fact label="Posted">{fr.label}</Fact>
-        <Fact label="Source">{job.source === "adzuna" ? "Adzuna" : job.source === "jsearch" ? "JSearch" : "Sample data"}</Fact>
+        <Fact label="Source">{job.source === "adzuna" ? "Adzuna" : job.source === "jsearch" ? "JSearch" : job.source === "manual" ? "Added by you" : "Sample data"}</Fact>
       </dl>
 
       {d && (
@@ -476,7 +479,7 @@ function ApplicationTab({
       <Section title="Where this application stands">
         <div className="flex flex-wrap items-center gap-3">
           <SaveControl job={job} saved={saved} onSave={onSave} onStatus={onStatus} onRemove={onRemove} />
-          {saved?.status !== "Applied" && saved?.status !== "Interviewing" && saved?.status !== "Offer" && saved?.status !== "Rejected" && (
+          {(!saved || isBeforeApplied(saved.status)) && (
             <button type="button" className={secondaryButton} onClick={() => (saved ? onStatus(saved.job.id, "Applied") : onSave(job, "Applied"))}>
               Mark as applied
             </button>

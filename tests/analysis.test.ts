@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { estimateYears, heuristicProfile } from "@/lib/heuristics";
 import { scoreJob } from "@/lib/matching/engine";
 import { extractSkills, flattenSkills } from "@/lib/skills";
-import { savedJobsToCsv, formatSalary } from "@/lib/format";
+import { applicationsToCsv } from "@/lib/export";
+import { formatSalary } from "@/lib/format";
 import { makeJob, makeSaved } from "./helpers";
 
 describe("skill extraction", () => {
@@ -58,7 +59,7 @@ describe("keyword profile", () => {
 describe("csv export", () => {
   it("neutralises spreadsheet formulas and escapes quotes", () => {
     const job = makeJob({ title: '=HYPERLINK("http://x")', company: 'Acme, "Inc"' });
-    const csv = savedJobsToCsv([makeSaved(job, { notes: "+1 call" })]);
+    const csv = applicationsToCsv([makeSaved(job, { notes: "+1 call" })]);
     expect(csv).toContain("\"'=HYPERLINK");
     expect(csv).toContain('"Acme, ""Inc"""');
     expect(csv).toContain("\"'+1 call\"");

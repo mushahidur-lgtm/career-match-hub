@@ -96,9 +96,9 @@ export const JOB_CATEGORIES = [
 export type JobCategory = (typeof JOB_CATEGORIES)[number];
 export type JobCategoryFilter = "All" | JobCategory;
 
-export type JobSource = "adzuna" | "jsearch" | "demo";
+export type JobSource = "adzuna" | "jsearch" | "demo" | "manual";
 /** "none" means no job source is configured, so searches return nothing rather than invented jobs. */
-export type ProviderStatus = JobSource | "none";
+export type ProviderStatus = Exclude<JobSource, "manual"> | "none";
 export type SalaryPeriod = "year" | "hour";
 
 export interface Salary {
@@ -285,16 +285,94 @@ export interface StoredResults extends SearchResponse {
   profileKey: string;
 }
 
-export const APPLICATION_STATUSES = ["Saved", "Applied", "Interviewing", "Offer", "Rejected"] as const;
+/** The path an application takes, in order. */
+export const APPLICATION_STAGES = ["New", "Interested", "Preparing Application", "Applied", "Interview", "Offer"] as const;
+/** How an application can end without an offer being accepted. */
+export const APPLICATION_OUTCOMES = ["Rejected", "Withdrawn", "Closed"] as const;
+export const APPLICATION_STATUSES = [...APPLICATION_STAGES, ...APPLICATION_OUTCOMES] as const;
 export type ApplicationStatus = (typeof APPLICATION_STATUSES)[number];
 
-export interface SavedJob {
+/** Names used before the pipeline had these stages. Data saved with them is read as the new names. */
+export function legacyStatus(value: unknown): unknown {
+  if (value === "Saved") return "Interested";
+  if (value === "Interviewing") return "Interview";
+  return value;
+}
+
+export interface Recruiter {
+  name: string;
+  email: string;
+  phone: string;
+}
+
+export interface OfferDetails {
+  salary: string;
+  bonus: string;
+  benefits: string;
+  startDate: string | null;
+  /** The date you must answer by. */
+  decideBy: string | null;
+  notes: string;
+}
+
+export const INTERVIEW_STAGES = ["Recruiter screen", "Hiring manager", "Technical", "Behavioural", "Panel", "Final", "Other"] as const;
+export type InterviewStage = (typeof INTERVIEW_STAGES)[number];
+export const INTERVIEW_FORMATS = ["Phone", "Video", "On-site", "Take-home", "Other"] as const;
+export type InterviewFormat = (typeof INTERVIEW_FORMATS)[number];
+export const INTERVIEW_STATUSES = ["Scheduled", "Completed", "Cancelled"] as const;
+export type InterviewStatus = (typeof INTERVIEW_STATUSES)[number];
+
+export interface Interview {
+  id: string;
+  /** Local date and time as "YYYY-MM-DDTHH:mm", or null while the time is not set. */
+  at: string | null;
+  stage: InterviewStage;
+  format: InterviewFormat;
+  status: InterviewStatus;
+  interviewers: string;
+  prepNotes: string;
+  questionsToAsk: string[];
+  topicsToReview: string[];
+  feedback: string;
+}
+
+export type ActivityKind = "created" | "status" | "note" | "contact" | "interview" | "edit";
+
+export interface ActivityEntry {
+  id: string;
+  at: string;
+  kind: ActivityKind;
+  text: string;
+}
+
+/** A job you are tracking, with everything about pursuing it. Dates are "YYYY-MM-DD" unless noted. */
+export interface Application {
   job: Job;
   status: ApplicationStatus;
   notes: string;
   savedAt: string;
   updatedAt: string;
+  appliedAt?: string | null;
+  /** The resume version you applied with, and its name at the time. */
+  resumeVersionId?: string | null;
+  resumeName?: string | null;
+  coverLetter?: string;
+  recruiter?: Recruiter;
+  followUpDate?: string | null;
+  /** The last day to apply. */
+  deadline?: string | null;
+  /** When you expect to hear back by. */
+  responseDue?: string | null;
+  salaryExpectation?: string;
+  offer?: OfferDetails;
+  rejectionReason?: string;
+  interviews?: Interview[];
+  /** Oldest first. */
+  history?: ActivityEntry[];
 }
+
+/** Older code and stored data call a tracked job a SavedJob. */
+export type SavedJob = Application;
 
 export interface AppStatus {
   ai: boolean;

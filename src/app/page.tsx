@@ -4,23 +4,27 @@ import { Download } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { AppShell, normalizeTab, type Tab } from "@/components/AppShell";
+import { AddApplicationDialog } from "@/components/AddApplicationDialog";
+import { ApplicationDialog, type ApplicationTab } from "@/components/ApplicationDialog";
+import { ApplicationsPage } from "@/components/ApplicationsPage";
+import { InterviewTracker } from "@/components/InterviewTracker";
 import { JobCard } from "@/components/JobCard";
 import { DetailContext, JobDetailDialog } from "@/components/JobDetailDialog";
 import { Overview } from "@/components/Overview";
 import { ResultFilters } from "@/components/ResultFilters";
 import { ResumeManager } from "@/components/ResumeManager";
-import { SavedJobsBoard } from "@/components/SavedJobsBoard";
 import { SearchFilters } from "@/components/SearchFilters";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { StatusBanner } from "@/components/StatusBanner";
 import { Notice, inputClass, secondaryButton } from "@/components/ui";
 import { jobKey, mergeResumes, mergeSavedJobs, type AppData } from "@/lib/backup";
-import { jobsToCsv } from "@/lib/export";
+import { computeReminders } from "@/lib/applications";
+import { applicationsToCsv, jobsToCsv } from "@/lib/export";
 import { sortJobs } from "@/lib/format";
 import { profileSkills } from "@/lib/heuristics";
 import { newId, uniqueName } from "@/lib/ids";
 import { computeOverview } from "@/lib/overview";
-import { addSavedJob, findSaved, removeSavedJob, setSavedNotes, setSavedStatus } from "@/lib/saved";
+import { addSavedJob, findSaved, removeSavedJob, setSavedNotes, setSavedStatus, updateSavedJob } from "@/lib/saved";
 import { DEFAULT_REFINE, RefineSchema, refineJobs, type RefineFilters } from "@/lib/refine";
 import { FiltersSchema, PreferencesSchema, ResumeVersionsSchema, SavedJobsSchema } from "@/lib/schemas";
 import { fillStructure, lacksStructure } from "@/lib/resume-sections";
@@ -31,6 +35,7 @@ import {
   DEFAULT_PREFERENCES,
   type ApiError,
   type AppStatus,
+  type Application,
   type ApplicationStatus,
   type CandidateProfile,
   type Job,
@@ -65,7 +70,7 @@ export default function Home() {
   const [filters, setFilters] = usePersistentState<Filters>("cmh:filters", DEFAULT_FILTERS, check(FiltersSchema));
   const [preferences, setPreferences] = usePersistentState<SearchPreferences>("cmh:preferences", DEFAULT_PREFERENCES, check(PreferencesSchema));
   const [results, setResults] = usePersistentState<StoredResults | null>("cmh:results", null);
-  const [saved, setSaved, , , savedLost] = usePersistentState<SavedJob[]>("cmh:saved", [], check(SavedJobsSchema));
+  const [saved, setSaved, , , savedLost] = usePersistentState<SavedJob[]>("cmh:applications", [], check(SavedJobsSchema));
   const [sort, setSort] = usePersistentState<SortKey>("cmh:sort", "score");
   const [refine, setRefine] = usePersistentState<RefineFilters>("cmh:refine", DEFAULT_REFINE, check(RefineSchema));
   const recovered = resumesLost || savedLost;
@@ -74,6 +79,8 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [detailJob, setDetailJob] = useState<Job | null>(null);
+  const [openApp, setOpenApp] = useState<{ id: string; tab: ApplicationTab } | null>(null);
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -154,10 +161,26 @@ export default function Home() {
 
   /* ----- saved jobs ----- */
   // `id` below is the tracked entry's own id. The cards and dialogs pass `saved.job.id`.
-  const saveJob = (job: Job, st: ApplicationStatus) => setSaved((list) => addSavedJob(list, job, st));
-  const setJobStatus = (id: string, st: ApplicationStatus) => setSaved((list) => setSavedStatus(list, id, st));
+  const resumeRef = active ? { id: active.id, name: active.name } : null;
+  const saveJob = (job: Job, st: ApplicationStatus) => setSaved((list) => addSavedJob(list, job, st, new Date(), resumeRef));
+  const setJobStatus = (id: string, st: ApplicationStatus) => setSaved((list) => setSavedStatus(list, id, st, new Date(), { resume: resumeRef }));
   const setJobNotes = (id: string, notes: string) => setSaved((list) => setSavedNotes(list, id, notes));
   const removeJob = (id: string) => setSaved((list) => removeSavedJob(list, id));
+  const updateApp = (id: string, change: (a: Application) => Application) => setSaved((list) => updateSavedJob(list, id, change));
+  const moveApp = (id: string, st: ApplicationStatus, opts?: { rejectionReason?: string }) => setSaved((list) => setSavedStatus(list, id, st, new Date(), { resume: resumeRef, ...opts }));
+  const openApplication = (id: string, tab: ApplicationTab = "details") => setOpenApp({ id, tab });
+  const reminders = useMemo(() => computeReminders(saved), [saved]);
+  const exportApplications = () => {
+    const blob = new Blob([applicationsToCsv(saved)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `career-match-hub-applications-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
 
   /* ----- resume versions ----- */
   const addResume = (text: string, fileName: string | null, p: CandidateProfile) => {
@@ -204,11 +227,11 @@ export default function Home() {
 
   const provider = results ? results.provider : status?.jobProvider;
 
-  const detailContext = { resume: active, aiAvailable: status?.ai ?? false, onNotes: setJobNotes };
+  const detailContext = { resume: active, resumes, aiAvailable: status?.ai ?? false, onNotes: setJobNotes };
 
   return (
     <DetailContext.Provider value={detailContext}>
-    <AppShell tab={tab} onTab={setTab} counts={{ applications: saved.length }} status={<StatusBanner status={status} results={results} />}>
+    <AppShell tab={tab} onTab={setTab} counts={{ applications: saved.length, interviews: saved.reduce((n, a) => n + (a.interviews ?? []).filter((i) => i.status === "Scheduled").length, 0) }} status={<StatusBanner status={status} results={results} />}>
       {recovered && (
         <Notice tone="warn">
           Some saved data could not be read, so it was set aside instead of deleted.{" "}
@@ -220,7 +243,7 @@ export default function Home() {
 
       <main className="flex-1" aria-busy={!hydrated}>
         {!hydrated ? null : tab === "overview" ? (
-          <Overview stats={stats} resumeName={active?.name ?? null} provider={provider} hasSearched={Boolean(results)} onOpenJob={setDetailJob} onGo={setTab} />
+          <Overview stats={stats} resumeName={active?.name ?? null} provider={provider} hasSearched={Boolean(results)} onOpenJob={setDetailJob} onOpenApplication={openApplication} onGo={setTab} />
         ) : tab === "profile" ? (
           <ResumeManager
             versions={resumes}
@@ -358,13 +381,40 @@ export default function Home() {
               </section>
             )}
           </div>
+        ) : tab === "interviews" ? (
+          <InterviewTracker items={saved} onOpen={openApplication} onGoApplications={() => setTab("applications")} />
         ) : tab === "settings" ? (
           <SettingsPanel data={appData} recovered={recovered} onSavePreferences={savePreferences} onImport={importData} />
         ) : (
-          <SavedJobsBoard items={saved} onStatus={setJobStatus} onNotes={setJobNotes} onRemove={removeJob} onGoSearch={() => setTab("discover")} />
+          <ApplicationsPage items={saved} reminders={reminders} onOpen={openApplication} onMove={moveApp} onAdd={() => setAdding(true)} onExport={exportApplications} onGoDiscover={() => setTab("discover")} />
         )}
       </main>
 
+      {openApp && saved.find((a) => a.job.id === openApp.id) && (
+        <ApplicationDialog
+          key={openApp.id}
+          app={saved.find((a) => a.job.id === openApp.id)!}
+          initialTab={openApp.tab}
+          onUpdate={updateApp}
+          onMove={moveApp}
+          onRemove={(id) => {
+            removeJob(id);
+            setOpenApp(null);
+          }}
+          onClose={() => setOpenApp(null)}
+        />
+      )}
+      {adding && (
+        <AddApplicationDialog
+          findExisting={(job) => findSaved(saved, job)}
+          onCreate={(job, st) => {
+            saveJob(job, st);
+            setOpenApp({ id: job.id, tab: "details" });
+          }}
+          onOpenExisting={(id) => setOpenApp({ id, tab: "details" })}
+          onClose={() => setAdding(false)}
+        />
+      )}
       {detailJob && (
         <JobDetailDialog
           job={detailJob}

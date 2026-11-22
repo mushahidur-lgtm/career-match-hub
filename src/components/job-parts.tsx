@@ -41,7 +41,7 @@ export function ConfidenceBadge({ confidence }: { confidence: Confidence }) {
 export function SaveControl({ job, saved, onSave, onStatus, onRemove }: { job: Job; saved: SavedJob | undefined } & JobActions) {
   if (!saved) {
     return (
-      <button type="button" className={primaryButton} onClick={() => onSave(job, "Saved")}>
+      <button type="button" className={primaryButton} onClick={() => onSave(job, "Interested")}>
         <Bookmark className="size-4" aria-hidden /> Save job
       </button>
     );

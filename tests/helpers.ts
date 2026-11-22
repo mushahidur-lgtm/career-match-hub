@@ -21,7 +21,7 @@ export function makeJob(over: Partial<Job> = {}): Job {
 }
 
 export function makeSaved(job: Job, over: Partial<SavedJob> = {}): SavedJob {
-  return { job, status: "Saved", notes: "", savedAt: "2026-11-02T00:00:00Z", updatedAt: "2026-11-02T00:00:00Z", ...over };
+  return { job, status: "Interested", notes: "", savedAt: "2026-11-02T00:00:00Z", updatedAt: "2026-11-02T00:00:00Z", ...over };
 }
 
 /** A Storage stand-in backed by a Map. */

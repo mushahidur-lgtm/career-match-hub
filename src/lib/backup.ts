@@ -12,7 +12,7 @@ import { duplicateKey } from "./dedupe";
 import { LEGACY_VERSION_ID, nameFromFile } from "./storage";
 
 export const BACKUP_APP = "career-match-hub";
-export const BACKUP_VERSION = 2;
+export const BACKUP_VERSION = 3;
 const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
 
 export interface AppData {
@@ -70,6 +70,7 @@ export function parseBackup(text: string): ParsedBackup {
   if (!env.success) return damaged(env.error.issues[0]);
 
   if (env.data.version >= 2) {
+    // Versions 2 and 3 share a shape. Version 3 adds application fields; older status names are read as the new ones.
     const d = DataV2.safeParse(env.data.data);
     return d.success ? { ok: true, data: d.data as AppData, exportedAt: env.data.exportedAt } : damaged(d.error.issues[0]);
   }

@@ -116,7 +116,7 @@ describe("text filters", () => {
 
 describe("application status", () => {
   const jobs = [makeJob({ id: "a" }), makeJob({ id: "b" }), makeJob({ id: "c" })];
-  const status = { a: "Applied", b: "Saved" } as Record<string, ApplicationStatus>;
+  const status = { a: "Applied", b: "Interested" } as Record<string, ApplicationStatus>;
   it("filters by a status", () => expect(run(jobs, { status: "Applied" }, status)).toEqual(["a"]));
   it("finds jobs you are not tracking", () => expect(run(jobs, { status: "Not tracked" }, status)).toEqual(["c"]));
 });

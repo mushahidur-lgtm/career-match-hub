@@ -1,5 +1,5 @@
 import "server-only";
-import type { Job, JobSource, ProviderStatus, SearchFilters } from "@/types/job";
+import type { Job, ProviderStatus, SearchFilters } from "@/types/job";
 import { adzunaConfigured, searchAdzuna } from "./adzuna";
 import { ProviderError, dedupeJobs } from "./common";
 import { demoJobs } from "./demo";
@@ -29,7 +29,7 @@ export interface ProviderResult {
 /** Tries Adzuna, then JSearch. Falls back to sample listings only when demo is enabled. */
 export async function fetchJobs(filters: SearchFilters): Promise<ProviderResult> {
   const warnings: string[] = [];
-  const attempts: [JobSource, () => Promise<Job[]>][] = [];
+  const attempts: ["adzuna" | "jsearch", () => Promise<Job[]>][] = [];
   if (adzunaConfigured()) attempts.push(["adzuna", () => searchAdzuna(filters)]);
   if (jsearchConfigured()) attempts.push(["jsearch", () => searchJSearch(filters)]);
 

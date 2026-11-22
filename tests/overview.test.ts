@@ -68,7 +68,7 @@ describe("counts", () => {
   });
 
   it("counts a job once even when it is both in the results and saved", () => {
-    const o = computeOverview(results([a, b]), [saved(a, "Saved")], now);
+    const o = computeOverview(results([a, b]), [saved(a, "Interested")], now);
     expect(o.activeOpportunities).toBe(2);
   });
 
@@ -86,7 +86,7 @@ describe("counts", () => {
   it("counts applications sent and interviews from tracked statuses only", () => {
     const o = computeOverview(
       null,
-      [saved(job("1"), "Saved"), saved(job("2"), "Applied"), saved(job("3"), "Interviewing"), saved(job("4"), "Offer"), saved(job("5"), "Rejected")],
+      [saved(job("1"), "Interested"), saved(job("2"), "Applied"), saved(job("3"), "Interview"), saved(job("4"), "Offer"), saved(job("5"), "Rejected")],
       now,
     );
     expect(o.applicationsSent).toBe(4);
@@ -138,9 +138,9 @@ describe("applications needing attention", () => {
       null,
       [
         saved(job("offer"), "Offer", 1),
-        saved(job("interview"), "Interviewing", 6),
+        saved(job("interview"), "Interview", 6),
         saved(job("applied"), "Applied", 9),
-        saved(job("excellent", { match: withMatch(95) }), "Saved", 3),
+        saved(job("excellent", { match: withMatch(95) }), "Interested", 3),
       ],
       now,
     );
@@ -149,7 +149,7 @@ describe("applications needing attention", () => {
   });
 
   it("leaves recent and routine items alone", () => {
-    const o = computeOverview(null, [saved(job("fresh"), "Applied", 2), saved(job("low", { match: withMatch(60) }), "Saved", 10), saved(job("done"), "Rejected", 30)], now);
+    const o = computeOverview(null, [saved(job("fresh"), "Applied", 2), saved(job("low", { match: withMatch(60) }), "Interested", 10), saved(job("done"), "Rejected", 30)], now);
     expect(o.attention).toEqual([]);
   });
 });

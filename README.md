@@ -7,7 +7,9 @@ Upload your resume, see which jobs fit your skills, and track every application 
 - **Discover jobs.** Search by title and city, then refine the results without searching again: minimum match score, salary range, location, work arrangement, employment type, category, seniority, posted date, company, title and application status. Results show salary, posting age, match score and confidence, and your status, are paged 15 at a time, and export to CSV. Repeated listings of the same posting within a search are merged into one. A posting more than 30 days old is flagged as possibly closed; a missing posting date is shown as such and never guessed.
 - **Transparent match scoring.** Every job gets a 0 to 100 score built from six weighted parts you can inspect and re-weight, with required versus preferred skills, related skills, resume evidence, gaps, a confidence level and a plain explanation. 90 and above is green, 70 to 89 is blue, below 70 is amber.
 - **Job details in five tabs.** Overview, Job description (with the required and preferred skills read from it), Match analysis, Resume recommendations and Application. Resume recommendations quote the lines from your resume to lead with, the keywords on your profile that your resume never names, lines that lack a result, projects to put forward, and the gaps stated honestly. The Application tab has your status, notes, the apply link and a preparation summary. With a Claude key you can also ask for reworded lines and a tailored summary; every line Claude quotes is checked against your resume, and a rewrite that adds a skill you have not listed or a number that was not in your line is removed.
-- **My applications.** Save jobs, move them through Saved, Applied, Interviewing, Offer and Rejected, add notes, and export to CSV.
+- **My applications.** A full tracker. Stages run New, Interested, Preparing Application, Applied, Interview, Offer, with Rejected, Withdrawn and Closed as outcomes. Use a Kanban board (drag a card, or use its Move to menu) or a sortable table. Each application keeps the dates (applied, follow-up, deadline, expected reply), the resume version you used, a cover letter, recruiter contact details, your salary expectation, offer details, the rejection reason, notes, and a dated activity history. Moving to Applied records the date and resume and suggests a follow-up a week later. Add jobs you found elsewhere, and the same posting can never be tracked twice. Export everything to CSV.
+- **Interview tracker.** Every interview across your applications: stage, format, date and time, interviewers, topics to review, questions to ask, preparation notes and feedback. Adding one moves the application to the Interview stage. Practice prompts come from the posting and are labelled as practice, not a prediction of what will be asked; a skill you lack is prompted as "how would you get up to speed", never as experience to claim. With a Claude key you can ask for tailored prompts and answer outlines, and any resume line it quotes is checked against your resume.
+- **Reminders.** The Overview lists follow-ups due, upcoming interviews, application deadlines, expected replies and offer decision dates, from the dates you set. They appear in the app only; nothing is emailed yet.
 - **Honest about its data.** Jobs come only from a connected job board (Adzuna or JSearch). With no job-board key a deployed site shows no jobs and says so. `npm run dev` shows clearly labelled sample jobs for development only. Resume analysis falls back to a keyword engine when there is no Claude key.
 - **Built for a permanent full-time search.** The default filter is Permanent full-time with a CAD $100,000 minimum. Jobs that state a lower salary are hidden, jobs that state none stay and are marked Salary unknown, and salaries a job board only estimated never hide a job. Edit your cities, roles and minimum in Settings.
 - **Your data stays yours.** Settings exports and imports a JSON backup. Existing data is snapshotted before any upgrade, and unreadable data is set aside rather than overwritten.
@@ -108,7 +110,8 @@ Scores are guidance about fit. They do not predict hiring decisions.
 ## Privacy
 
 - Your resume versions, profiles, filters, results and saved jobs live in your browser's `localStorage`. Nothing is stored on the server and there is no database.
-- Tailored suggestions are sent to Anthropic only when you press the button on a job: the posting and your resume text. The result is cached in this browser (the last 20 jobs) so it is not requested again.
+- Tailored suggestions and interview practice are sent to Anthropic only when you press the button: the posting and your resume text. The result is cached in this browser (the last 20 jobs) so it is not requested again.
+- Applications are stored under their own key. The upgrade copies your earlier saved jobs there and leaves the old copy untouched, so returning to the previous release still shows them.
 - Upgrades save a snapshot of your previous data in the same browser storage, and keep the old single-resume copy so you can return to the previous release without losing anything. Those copies include your old resume text. Settings has a button to delete them once you are happy.
 - Uploaded files are parsed in memory on the server and discarded.
 - With `ANTHROPIC_API_KEY` set, your resume text and the job postings in view are sent to Anthropic for analysis and scoring.
@@ -162,6 +165,7 @@ src/
       analyze-resume/route.ts     Claude profile extraction, keyword fallback
       search-jobs/route.ts        Provider search, filtering, AI match scoring
       job-insights/route.ts       Tailored resume suggestions, checked against the resume
+      interview-prep/route.ts     Tailored interview practice, checked against the resume
       status/route.ts             Which features are live (no key values)
   components/
     AppShell.tsx                  Sidebar navigation (top bar on phones)
@@ -172,6 +176,11 @@ src/
     SearchFilters.tsx             City, role, work mode, employment type, salary
     JobCard.tsx                   Job card
     JobDetailDialog.tsx           Five-tab job detail view
+    ApplicationsPage.tsx          Board and table of applications
+    ApplicationDialog.tsx         One application: dates, contacts, offer, interviews, history
+    InterviewEditor.tsx           One interview, with practice prompts
+    InterviewTracker.tsx          Interviews across all applications
+    AddApplicationDialog.tsx      Add a job found elsewhere
     ResultFilters.tsx             Refine-results panel
     SavedJobsBoard.tsx            Tracker, notes, CSV export
     StatusBanner.tsx, ui.tsx      Live/Demo banner and shared pieces
@@ -182,6 +191,9 @@ src/
     ai-profile.ts                 Turns Claude's reading into a verified profile
     overview.ts                   Overview numbers
     refine.ts, dedupe.ts          Result filters and duplicate merging
+    applications.ts               Pipeline moves, history, interviews, reminders
+    interview-prep.ts             Practice prompts and the checks on Claude's
+    saved.ts                      Finding and changing tracked applications
     job-meta.ts                   Posting age and level
     resume-help.ts, insights.ts   Resume recommendations and the checks on Claude's suggestions
     storage.ts, backup.ts         Versioned storage, migrations, backup and import

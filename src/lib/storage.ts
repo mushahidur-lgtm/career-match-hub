@@ -1,7 +1,7 @@
 import { DEFAULT_PREFERENCES } from "@/types/job";
 
 /** Version of the browser storage layout. Bump it and add a step to `migrateStorage` when the layout changes. */
-export const STORAGE_VERSION = 3;
+export const STORAGE_VERSION = 4;
 export const VERSION_KEY = "cmh:schema";
 export const RECOVERED_PREFIX = "cmh:recovered:";
 export const SNAPSHOT_PREFIX = "cmh:backup:";
@@ -72,6 +72,12 @@ export function migrateStorage(s: StorageLike): MigrationResult {
     if (!upgradeSingleResume(s)) return { migrated: false, snapshot };
   }
 
+  if (current < 4) {
+    snapshot = takeSnapshot(s, 4, current) || snapshot;
+    // Saved jobs become applications under a new key. The old key is left alone for rollback.
+    if (!upgradeSavedToApplications(s)) return { migrated: false, snapshot };
+  }
+
   s.setItem(VERSION_KEY, String(STORAGE_VERSION));
   return { migrated: true, snapshot };
 }
@@ -94,6 +100,37 @@ export const LEGACY_VERSION_ID = "legacy-1";
 /** Name for a resume version made from a file name. */
 export const nameFromFile = (fileName: string | null, fallback: string) =>
   (fileName ?? "").replace(/\.[A-Za-z0-9]{1,8}$/, "").replace(/[_-]+/g, " ").trim().slice(0, 80) || fallback;
+
+const LEGACY_STATUS: Record<string, string> = { Saved: "Interested", Interviewing: "Interview" };
+
+/** Copies cmh:saved to cmh:applications with the new status names. Returns false if the write failed, so it is retried. */
+function upgradeSavedToApplications(s: StorageLike): boolean {
+  try {
+    const existing = s.getItem("cmh:applications");
+    if (existing !== null) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(existing);
+      } catch {
+        return true;
+      }
+      if (!Array.isArray(parsed) || parsed.length > 0) return true;
+    }
+    const raw = s.getItem("cmh:saved");
+    if (!raw) return true;
+    const list = JSON.parse(raw) as unknown;
+    if (!Array.isArray(list) || list.length === 0) return true;
+    const mapped = list.map((entry) => {
+      if (!entry || typeof entry !== "object") return entry;
+      const e = entry as { status?: unknown };
+      return typeof e.status === "string" && LEGACY_STATUS[e.status] ? { ...entry, status: LEGACY_STATUS[e.status] } : entry;
+    });
+    s.setItem("cmh:applications", JSON.stringify(mapped));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** The keys layout 2 used for the one resume. They are left in place so rolling back to the previous release still works. */
 export const LEGACY_RESUME_KEYS = ["cmh:resume", "cmh:profile"] as const;
@@ -154,15 +191,31 @@ export function listRecovered(s: StorageLike): string[] {
   return out;
 }
 
-/** True when the versions exist, so the layout 2 copies are only a leftover. */
-function legacyLeftovers(s: StorageLike): string[] {
+/** An old key paired with the key that replaced it. The old one is a leftover once the new one holds the data. */
+const REPLACED: { old: string; now: string }[] = [
+  { old: "cmh:resume", now: "cmh:resumes" },
+  { old: "cmh:profile", now: "cmh:resumes" },
+  { old: "cmh:saved", now: "cmh:applications" },
+];
+
+const arrayLength = (s: StorageLike, key: string): number | null => {
   try {
-    const versions = JSON.parse(s.getItem("cmh:resumes") ?? "null");
-    if (!Array.isArray(versions) || versions.length === 0) return [];
+    const v = JSON.parse(s.getItem(key) ?? "null");
+    return Array.isArray(v) ? v.length : null;
   } catch {
-    return [];
+    return null;
   }
-  return LEGACY_RESUME_KEYS.filter((k) => s.getItem(k) !== null);
+};
+
+/** Old keys whose data now lives under the new key, so they are only copies. An empty new list never counts, since a failed attempt leaves one. */
+function legacyLeftovers(s: StorageLike): string[] {
+  return REPLACED.filter(({ old, now }) => {
+    if (s.getItem(old) === null) return false;
+    const replacement = arrayLength(s, now);
+    if (replacement && replacement > 0) return true;
+    // Nothing to lose when the old key held no items either.
+    return old === "cmh:saved" && replacement !== null && arrayLength(s, old) === 0;
+  }).map((r) => r.old);
 }
 
 /**

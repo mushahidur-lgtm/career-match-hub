@@ -2,6 +2,10 @@ import { z } from "zod";
 import {
   APPLICATION_STATUSES,
   EMPLOYMENT_FILTERS,
+  INTERVIEW_FORMATS,
+  INTERVIEW_STAGES,
+  INTERVIEW_STATUSES,
+  legacyStatus,
   EMPLOYMENT_TYPES,
   JOB_CATEGORIES,
   MATCH_COMPONENTS,
@@ -156,18 +160,58 @@ export const JobSchema = z.object({
   description: str(60_000),
   descriptionTruncated: z.boolean(),
   applyUrl: str(2000).nullable(),
-  source: z.enum(["adzuna", "jsearch", "demo"]),
+  source: z.enum(["adzuna", "jsearch", "demo", "manual"]),
   match: MatchSchema.nullable(),
   duplicateCount: z.number().int().min(0).max(1000).optional(),
   otherApplyUrls: z.array(str(2000)).max(5).optional(),
 });
 
+/** Accepts the statuses used before the pipeline grew (Saved, Interviewing) and reads them as the current ones. */
+export const StatusSchema = z.preprocess(legacyStatus, z.enum(APPLICATION_STATUSES));
+
+const day = str(10).nullable().optional();
+
+export const InterviewSchema = z.object({
+  id: str(80),
+  at: str(16).nullable(),
+  stage: z.enum(INTERVIEW_STAGES),
+  format: z.enum(INTERVIEW_FORMATS),
+  status: z.enum(INTERVIEW_STATUSES),
+  interviewers: str(500),
+  prepNotes: str(10_000),
+  questionsToAsk: z.array(str(500)).max(30),
+  topicsToReview: z.array(str(200)).max(40),
+  feedback: str(10_000),
+});
+
+export const ActivitySchema = z.object({
+  id: str(80),
+  at: iso,
+  kind: z.enum(["created", "status", "note", "contact", "interview", "edit"]),
+  text: str(2000),
+});
+
 export const SavedJobSchema = z.object({
   job: JobSchema,
-  status: z.enum(APPLICATION_STATUSES),
+  status: StatusSchema,
   notes: str(10_000),
   savedAt: iso,
   updatedAt: iso,
+  appliedAt: day,
+  resumeVersionId: str(80).nullable().optional(),
+  resumeName: str(120).nullable().optional(),
+  coverLetter: str(20_000).optional(),
+  recruiter: z.object({ name: str(200), email: str(200), phone: str(60) }).optional(),
+  followUpDate: day,
+  deadline: day,
+  responseDue: day,
+  salaryExpectation: str(200).optional(),
+  offer: z
+    .object({ salary: str(200), bonus: str(200), benefits: str(2000), startDate: str(10).nullable().default(null), decideBy: str(10).nullable().default(null), notes: str(5000) })
+    .optional(),
+  rejectionReason: str(2000).optional(),
+  interviews: z.array(InterviewSchema).max(40).optional(),
+  history: z.array(ActivitySchema).max(500).optional(),
 });
 
 export const SavedJobsSchema = z.array(SavedJobSchema).max(5000);

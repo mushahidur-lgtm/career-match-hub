@@ -1,11 +1,11 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { BriefcaseBusiness, ClipboardList, FileUser, LayoutDashboard, Radar, Settings, type LucideIcon } from "lucide-react";
+import { BriefcaseBusiness, CalendarClock, ClipboardList, FileUser, LayoutDashboard, Radar, Settings, type LucideIcon } from "lucide-react";
 
-export type Tab = "overview" | "profile" | "discover" | "applications" | "settings";
+export type Tab = "overview" | "profile" | "discover" | "applications" | "interviews" | "settings";
 
-export const TABS: Tab[] = ["overview", "profile", "discover", "applications", "settings"];
+export const TABS: Tab[] = ["overview", "profile", "discover", "applications", "interviews", "settings"];
 
 /** Maps the tab names used before the sidebar existed onto the current ones. */
 export function normalizeTab(value: unknown): Tab | undefined {
@@ -19,6 +19,7 @@ const ITEMS: { id: Tab; label: string; icon: LucideIcon }[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "discover", label: "Discover jobs", icon: Radar },
   { id: "applications", label: "My applications", icon: ClipboardList },
+  { id: "interviews", label: "Interview tracker", icon: CalendarClock },
   { id: "profile", label: "Resume and profile", icon: FileUser },
   { id: "settings", label: "Settings", icon: Settings },
 ];

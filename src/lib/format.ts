@@ -1,4 +1,4 @@
-import type { Job, SavedJob, Salary, SortKey } from "@/types/job";
+import type { Job, Salary, SortKey } from "@/types/job";
 
 export function formatSalary(s: Salary | null): string {
   if (!s || (s.min === null && s.max === null)) return "Salary unknown";
@@ -47,16 +47,4 @@ export function csvCell(value: unknown): string {
   let s = value === null || value === undefined ? "" : String(value);
   if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return `"${s.replace(/"/g, '""')}"`;
-}
-
-export function savedJobsToCsv(items: SavedJob[]): string {
-  const header = [
-    "Title", "Company", "Location", "Work mode", "Employment type", "Salary", "Match score",
-    "Status", "Notes", "Posted", "Saved on", "Apply link",
-  ];
-  const rows = items.map((i) => [
-    i.job.title, i.job.company, i.job.location, i.job.workMode, i.job.employmentType, formatSalary(i.job.salary),
-    i.job.match?.score ?? "", i.status, i.notes, i.job.postedAt?.slice(0, 10) ?? "", i.savedAt.slice(0, 10), i.job.applyUrl ?? "",
-  ]);
-  return "﻿" + [header, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n");
 }
