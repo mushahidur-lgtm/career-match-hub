@@ -74,14 +74,6 @@ export function useCloud({ data, apply, updateIntel, intel }: Options): CloudApi
   const configured = isCloudConfigured();
   // The Supabase library is loaded only when cloud features are configured, so a browser-only setup never downloads it.
   const [sb, setSb] = useState<SupabaseClient | null>(null);
-  useEffect(() => {
-    if (!configured) return;
-    let live = true;
-    void import("./client").then((m) => live && setSb(m.getCloud()));
-    return () => {
-      live = false;
-    };
-  }, [configured]);
   const [memory, setMemory, hydrated] = usePersistentState<SyncMemory>("cmh:cloud", NO_SYNC, (v) => {
     const r = MemorySchema.safeParse(v);
     return r.success ? r.data : undefined;
@@ -92,6 +84,23 @@ export function useCloud({ data, apply, updateIntel, intel }: Options): CloudApi
   const [message, setMessage] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [latestRun, setLatestRun] = useState<LatestRun | null>(null);
+
+  useEffect(() => {
+    if (!configured) return;
+    let live = true;
+    import("./client")
+      .then((m) => live && setSb(m.getCloud()))
+      .catch(() => {
+        // The library could not be loaded, for example offline. Say so instead of waiting forever.
+        if (!live) return;
+        setReady(true);
+        setStatus("error");
+        setMessage("Cloud features could not be loaded. Check your connection and reload.");
+      });
+    return () => {
+      live = false;
+    };
+  }, [configured]);
 
   // The latest values, for callbacks that run later (timers, focus) and must not see old ones.
   const dataRef = useRef(data);

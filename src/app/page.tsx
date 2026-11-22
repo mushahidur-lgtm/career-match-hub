@@ -37,7 +37,7 @@ import { DEFAULT_REFINE, RefineSchema, refineJobs, type RefineFilters } from "@/
 import { FiltersSchema, PreferencesSchema, ResumeVersionsSchema } from "@/lib/schemas";
 import { fillStructure, lacksStructure } from "@/lib/resume-sections";
 import { nameFromFile } from "@/lib/storage";
-import { useUnsavedKeys } from "@/lib/storage-health";
+import { retryFailedSaves, useUnsavedKeys } from "@/lib/storage-health";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import {
   DEFAULT_FILTERS,
@@ -105,6 +105,13 @@ export default function Home() {
   const [sort, setSort] = usePersistentState<SortKey>("cmh:sort", "score");
   const [refine, setRefine] = usePersistentState<RefineFilters>("cmh:refine", DEFAULT_REFINE, check(RefineSchema));
   const unsaved = useUnsavedKeys();
+  // While something cannot be saved, keep trying, so it is saved as soon as space is freed.
+  const stuck = unsaved.length > 0;
+  useEffect(() => {
+    if (!stuck) return;
+    const t = setInterval(retryFailedSaves, 4000);
+    return () => clearInterval(t);
+  }, [stuck]);
   const recovered = resumesLost || savedLost || skipped > 0 || intelSkipped > 0 || intelLost;
 
   const [status, setStatus] = useState<AppStatus | null>(null);
@@ -294,7 +301,11 @@ export default function Home() {
           Your browser has no room left, so recent changes are <strong>not being saved</strong> and would be lost if you closed this page. Export a backup now, then free space by deleting upgrade copies in Settings or old search history.{" "}
           <button type="button" className="font-semibold underline" onClick={() => setTab("settings")}>
             Open Settings
+          </button>{" "}
+          <button type="button" className="font-semibold underline" onClick={retryFailedSaves}>
+            Try saving again
           </button>
+          . It retries by itself every few seconds.
         </Notice>
       )}
 

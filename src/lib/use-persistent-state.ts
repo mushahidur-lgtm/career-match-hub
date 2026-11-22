@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { migrateStorage, stashUnreadable } from "./storage";
-import { markFailed, markSaved } from "./storage-health";
+import { makeRoom, markFailed, markSaved, registerSpaceReleaser, useRetryToken } from "./storage-health";
 
 let migrationRan = false;
 
@@ -20,6 +20,24 @@ export function usePersistentState<T>(key: string, initial: T, validate?: (value
   const [recovered, setRecovered] = useState(false);
   const loaded = useRef(false);
   const validator = useRef(validate);
+  const retry = useRetryToken(key);
+  const latest = useRef(value);
+  const shrinkRef = useRef(shrink);
+  useEffect(() => {
+    latest.current = value;
+    shrinkRef.current = shrink;
+  });
+
+  // Data that can be given up in part (search history) offers space when something more important cannot be saved.
+  useEffect(() => {
+    if (!shrinkRef.current) return;
+    return registerSpaceReleaser(() => {
+      const smaller = shrinkRef.current?.(latest.current);
+      if (!smaller) return false;
+      setValue(smaller);
+      return true;
+    });
+  }, []);
 
   useEffect(() => {
     if (loaded.current) return;
@@ -59,14 +77,21 @@ export function usePersistentState<T>(key: string, initial: T, validate?: (value
       window.localStorage.setItem(key, JSON.stringify(value));
       markSaved(key);
     } catch {
-      /* Storage full or blocked. Data that can be given up in part (search history) is cut down so it never crowds out what cannot. */
+      /* Storage full or blocked. */
       const smaller = shrink?.(value);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (smaller) setValue(smaller);
-      // Nothing more can be given up: this change is not being saved, and the app says so.
-      else markFailed(key);
+      if (smaller) {
+        // This data can give up part of itself (search history): cut it down and write the smaller copy.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setValue(smaller);
+        return;
+      }
+      // This change is not being saved, and the app says so. If the data cannot spare anything itself, ask the
+      // data that can (search history) to make room, then try again, so history gives way to applications.
+      markFailed(key);
+      if (!shrink) makeRoom();
     }
-  }, [key, value, hydrated, shrink]);
+    // `retry` changes when a failed save is asked to run again, for example after space was freed.
+  }, [key, value, hydrated, shrink, retry]);
 
   const reset = useCallback(() => setValue(initial), [initial]);
   return [value, setValue, hydrated, reset, recovered] as const;
