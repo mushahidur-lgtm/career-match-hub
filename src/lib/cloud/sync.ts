@@ -66,6 +66,9 @@ export function mergeAppData(local: AppData, cloud: AppData): AppData {
   };
 }
 
+/** What is sent to the cloud. Cached lookups are left out: they are large, and cheap to run again. */
+export const forCloud = (d: AppData): AppData => (d.contacts ? { ...d, contacts: { ...d.contacts, finds: [] } } : d);
+
 export const isEmptyData = (d: AppData): boolean =>
   d.resumes.length === 0 && d.saved.length === 0 && (d.intel?.history.length ?? 0) === 0 && (d.intel?.seen.length ?? 0) === 0 && (d.contacts?.contacts.length ?? 0) === 0 && (d.contacts?.deletedIds.length ?? 0) === 0;
 

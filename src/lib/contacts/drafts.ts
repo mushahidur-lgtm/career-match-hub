@@ -71,7 +71,8 @@ export function buildDraft(input: DraftInput): Draft {
   const notes: string[] = [`Replace ${YOUR_NAME} with your name before sending.`];
   const interest = appliedAt ? `I applied for the ${job.title} role at ${job.company} on ${appliedAt}.` : `I am interested in the ${job.title} role at ${job.company}.`;
   const background = skills.length ? `My background includes ${list(skills)}${experience(profile) ? `, with ${experience(profile)}` : ""}.` : experience(profile) ? `I bring ${experience(profile)}.` : "";
-  if (!skills.length && profile) notes.push("None of the posting's skills were found on your resume, so no skills are mentioned. Add something true that fits.");
+  if (!job.description.trim()) notes.push("The posting text is not available here, so no skills are mentioned. Add something true that fits.");
+  else if (!skills.length && profile) notes.push("None of the posting's skills were found on your resume, so no skills are mentioned. Add something true that fits.");
   if (!profile) notes.push("No resume is selected, so nothing about your background is included.");
 
   if (kind === "connection") {

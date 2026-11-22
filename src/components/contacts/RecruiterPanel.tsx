@@ -87,16 +87,18 @@ export function RecruiterPanel({ job }: { job: Job }) {
       {!isSample && companyKnown && (
         <div className="space-y-2 rounded-xl border border-line p-4">
           <div className="flex flex-wrap items-center gap-3">
-            <button type="button" className={primaryButton} onClick={() => void searchWeb()} disabled={loading || !api.aiAvailable}>
+            <button type="button" className={primaryButton} onClick={() => void searchWeb()} disabled={loading || !api.webSearchAvailable}>
               {loading ? <Spinner /> : <Search className="size-4" aria-hidden />}
               {webDone ? "Search the web again" : "Search the web for contacts"}
             </button>
             {find && <span className="text-xs text-muted">{webDone ? `Web search last run ${new Date(find.at).toLocaleDateString()}.` : "So far, only names the posting itself states."}</span>}
           </div>
           <p className="text-xs text-muted">
-            {api.aiAvailable
+            {api.webSearchAvailable
               ? "Uses Anthropic web search with this site's API key. Each lookup runs up to 4 searches and may cost a small fee per search (see Anthropic's pricing). Results are kept so this job is not searched again unless you ask."
-              : "Web search needs an Anthropic API key on this site (ANTHROPIC_API_KEY). Without it, only names stated in the posting are shown."}
+              : api.aiAvailable
+                ? "Web lookups are switched off on this site because each one costs money. The site owner can turn them on (RECRUITER_WEB_SEARCH=1, see the README). Until then, only names stated in the posting are shown."
+                : "Web search needs an Anthropic API key on this site (ANTHROPIC_API_KEY). Without it, only names stated in the posting are shown."}
           </p>
           {error && <Notice tone="error">{error}</Notice>}
         </div>

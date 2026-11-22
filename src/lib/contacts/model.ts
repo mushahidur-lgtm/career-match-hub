@@ -456,3 +456,17 @@ export function networkingStats(contacts: Contact[]) {
     replyRate: reached >= MIN_REQUESTS_FOR_RATE ? Math.round((replied / reached) * 100) : null,
   };
 }
+
+/**
+ * Whether an email address is plausibly this person's own: its local part holds their first or last name. A shared
+ * address (careers@, ceo@, recruiting@) or someone else's is not attached to a person, even if it appears near their name.
+ * The address must still appear word for word in a source: this only decides whether it belongs to the person.
+ */
+export function emailBelongsTo(name: string, email: string): boolean {
+  const local = email.split("@")[0]?.toLowerCase().replace(/[^a-z]/g, "") ?? "";
+  const parts = normName(name).split(" ").filter(Boolean);
+  const first = parts[0]?.replace(/[^a-z]/g, "") ?? "";
+  const last = (parts[parts.length - 1] ?? "").replace(/[^a-z]/g, "");
+  if (!local || !first || !last) return false;
+  return (last.length >= 3 && local.includes(last)) || (first.length >= 3 && local.includes(first)) || local === `${first[0]}${last}`;
+}

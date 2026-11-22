@@ -69,6 +69,12 @@ describe("drafts only say what is true", () => {
     expect(d.body).toContain(YOUR_NAME);
   });
 
+  it("says the posting text is missing, rather than that your resume lacks the skills", () => {
+    const d = buildDraft({ kind: "intro", contact: fresh(), job: { ...job, description: "" }, profile, appliedAt: null });
+    expect(d.notes.join(" ")).toMatch(/posting text is not available/);
+    expect(d.notes.join(" ")).not.toMatch(/None of the posting/);
+  });
+
   it("includes nothing about your background without a resume, and says why", () => {
     const d = buildDraft({ kind: "intro", contact: fresh(), job, profile: null, appliedAt: null });
     expect(d.body).not.toMatch(/background|years/);

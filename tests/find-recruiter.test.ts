@@ -2,13 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ContentBlock } from "@anthropic-ai/sdk/resources/messages/messages";
 
 const search = vi.hoisted(() => ({ searchWeb: vi.fn() }));
-const auth = vi.hoisted(() => ({ requireSignedIn: vi.fn() }));
+const auth = vi.hoisted(() => ({ requireSignedIn: vi.fn(), signInEnforced: vi.fn() }));
 
 vi.mock("@/lib/contacts/web-search", async () => {
   const actual = await vi.importActual<typeof import("@/lib/contacts/web-search")>("@/lib/contacts/web-search");
   return { ...actual, searchWeb: search.searchWeb };
 });
-vi.mock("@/lib/cloud/auth", () => ({ requireSignedIn: auth.requireSignedIn }));
+vi.mock("@/lib/cloud/auth", () => ({ requireSignedIn: auth.requireSignedIn, signInEnforced: auth.signInEnforced }));
 
 import { POST } from "@/app/api/find-recruiter/route";
 import { parseCandidatesBlock, parseResponse } from "@/lib/contacts/web-search";
@@ -23,6 +23,8 @@ const nextIp = () => `10.0.0.${++ipCounter}`;
 
 beforeEach(() => {
   vi.stubEnv("ANTHROPIC_API_KEY", "sk-test-not-real");
+  vi.stubEnv("RECRUITER_WEB_SEARCH", "1");
+  auth.signInEnforced.mockReset().mockReturnValue(false);
   search.searchWeb.mockReset();
   auth.requireSignedIn.mockReset().mockResolvedValue({ ok: true });
 });
@@ -98,8 +100,27 @@ describe("the Find Recruiter route", () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "");
     const res = await call(job, nextIp());
     expect(res.status).toBe(200);
-    expect((await res.json()).note).toMatch(/ANTHROPIC_API_KEY/);
+    expect((await res.json()).note).toMatch(/switched off/);
     expect(search.searchWeb).not.toHaveBeenCalled();
+  });
+
+  it("an Anthropic key alone does not open paid searches to everyone: it needs the owner opt-in", async () => {
+    vi.stubEnv("RECRUITER_WEB_SEARCH", "");
+    const res = await call(job, nextIp());
+    expect((await res.json()).note).toMatch(/switched off.*costs money/);
+    expect(search.searchWeb).not.toHaveBeenCalled();
+    // Once sign-in is enforced, that is the protection, and no separate opt-in is needed.
+    auth.signInEnforced.mockReturnValue(true);
+    search.searchWeb.mockResolvedValue({ ok: true, model: "m", parsed: { searches: 0, toolErrors: [], evidence: { results: [], citations: [] }, raw: [] } });
+    await call(job, nextIp());
+    expect(search.searchWeb).toHaveBeenCalledTimes(1);
+  });
+
+  it("refusals do not use up the visitor lookup limit", async () => {
+    const ip = nextIp();
+    for (let i = 0; i < 6; i++) await call({ ...job, source: "demo" }, ip);
+    search.searchWeb.mockResolvedValue({ ok: true, model: "m", parsed: { searches: 0, toolErrors: [], evidence: { results: [], citations: [] }, raw: [] } });
+    expect((await call(job, ip)).status).toBe(200);
   });
 
   it("refuses someone who is not signed in, before any search is paid for", async () => {

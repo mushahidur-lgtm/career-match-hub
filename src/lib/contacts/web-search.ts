@@ -15,6 +15,15 @@ export interface FindInput {
 
 export const MAX_SEARCHES = 4;
 
+/**
+ * Web lookups bill Anthropic per search, and a public site has no sign-in unless cloud sync is configured. So they stay off
+ * until the owner turns them on with RECRUITER_WEB_SEARCH=1, or sign-in is enforced (the database is configured), which
+ * also limits who can run them. Adding an Anthropic key for resume analysis must not quietly open paid searches to everyone.
+ */
+export function webSearchEnabled(signInEnforced: boolean): boolean {
+  return Boolean(process.env.ANTHROPIC_API_KEY?.trim()) && (process.env.RECRUITER_WEB_SEARCH === "1" || signInEnforced);
+}
+
 const SYSTEM = `You help a job seeker find the people who are publicly named as responsible for hiring for ONE job. Use web search.
 Rules:
 - Report only people that a page you found actually names. Never guess or construct a name, an email address, a phone number or a profile link.

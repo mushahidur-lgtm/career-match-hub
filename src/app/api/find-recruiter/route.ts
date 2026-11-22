@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { isAiConfigured } from "@/lib/anthropic";
-import { requireSignedIn } from "@/lib/cloud/auth";
-import { describeToolError, searchWeb } from "@/lib/contacts/web-search";
+import { requireSignedIn, signInEnforced } from "@/lib/cloud/auth";
+import { describeToolError, searchWeb, webSearchEnabled } from "@/lib/contacts/web-search";
 import { verifyCandidates } from "@/lib/contacts/verify";
 import { badRequest, rateLimit } from "@/lib/rate-limit";
 import type { Contact } from "@/types/contacts";
@@ -32,12 +31,6 @@ export interface FindRecruiterResponse {
 }
 
 export async function POST(req: Request) {
-  const limited = rateLimit(req, "find-recruiter", 3, 60_000) ?? rateLimit(req, "find-recruiter-hour", 12, 3_600_000);
-  if (limited) return limited;
-
-  const auth = await requireSignedIn(req);
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return badRequest("Send the job title, company and location.");
   const job = parsed.data;
@@ -49,9 +42,19 @@ export async function POST(req: Request) {
   if (/^company not listed$/i.test(job.company.trim())) {
     return NextResponse.json<FindRecruiterResponse>({ candidates: [], note: "The posting does not name the employer, so there is no company to search for.", searches: 0 });
   }
-  if (!isAiConfigured()) {
-    return NextResponse.json<FindRecruiterResponse>({ candidates: [], note: "Web search needs an Anthropic API key (ANTHROPIC_API_KEY) on this site. Names the posting itself states are still shown.", searches: 0 });
+  if (!webSearchEnabled(signInEnforced())) {
+    return NextResponse.json<FindRecruiterResponse>({
+      candidates: [],
+      note: "Web lookups are switched off on this site, because each one costs money. The site owner can enable them (see the README). Names the posting itself states are still shown.",
+      searches: 0,
+    });
   }
+
+  // Only a real lookup counts against the limits, so sample-job clicks and refusals do not use them up.
+  const limited = rateLimit(req, "find-recruiter", 3, 60_000) ?? rateLimit(req, "find-recruiter-hour", 12, 3_600_000);
+  if (limited) return limited;
+  const auth = await requireSignedIn(req);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const now = Date.now();
   while (recent.length && now - recent[0] > 3_600_000) recent.shift();

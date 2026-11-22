@@ -1,6 +1,9 @@
 import "server-only";
 import { adminClient } from "./admin";
 
+/** True when this site has a database configured, so callers of costly routes must be signed in. */
+export const signInEnforced = () => adminClient() !== null;
+
 export type AuthResult = { ok: true } | { ok: false; status: 401 | 403; error: string };
 
 /**

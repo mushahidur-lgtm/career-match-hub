@@ -323,7 +323,7 @@ function Assistant({ contact: c }: { contact: Contact }) {
   const [copied, setCopied] = useState(false);
   const link = c.jobs[jobIdx] ?? null;
   const app = useMemo(() => (link ? api.applications.find((a) => jobKey(a.job) === link.jobKey) : undefined), [api.applications, link]);
-  const djob = { title: link?.jobTitle ?? "", company: link?.company ?? c.company, description: app?.job.description ?? "" };
+  const djob = { title: link?.jobTitle ?? "", company: link?.company ?? c.company, description: app?.job.description || (link ? api.descriptionFor(link.jobKey) : "") };
   const appliedAt = app?.appliedAt ?? null;
   const prior = priorContact(c);
 

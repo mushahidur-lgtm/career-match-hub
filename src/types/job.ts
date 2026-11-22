@@ -378,6 +378,8 @@ export interface AppStatus {
   ai: boolean;
   model: string | null;
   jobProvider: ProviderStatus;
+  /** True when paid web lookups for recruiters are switched on. */
+  recruiterWebSearch?: boolean;
 }
 
 export interface ParseResumeResponse {

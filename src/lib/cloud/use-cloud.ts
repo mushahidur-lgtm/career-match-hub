@@ -9,7 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { isCloudConfigured } from "./config";
 import { readDailyPayload, replayRun, type DailyPayload } from "./daily-payload";
 import { deleteCloud, fetchRow, fetchRuns, pushRow } from "./remote";
-import { NO_SYNC, hashData, isEmptyData, mergeAppData, planSync, type SyncMemory } from "./sync";
+import { NO_SYNC, forCloud, hashData, isEmptyData, mergeAppData, planSync, type SyncMemory } from "./sync";
 
 const MemorySchema = z.object({
   enabled: z.boolean(),
@@ -203,7 +203,7 @@ export function useCloud({ data, apply, updateIntel, intel }: Options): CloudApi
           applyRef.current(toPush);
         }
 
-        const res = await pushRow(sb, u.id, JSON.parse(buildBackup(toPush)), row?.version ?? 0);
+        const res = await pushRow(sb, u.id, JSON.parse(buildBackup(forCloud(toPush))), row?.version ?? 0);
         if (res.ok) {
           commit({ ...mem, lastVersion: res.version, lastHash: hashData(toPush) });
           done = true;

@@ -322,10 +322,12 @@ export default function Home() {
       profile: active?.profile ?? null,
       resumeText: active?.text ?? "",
       aiAvailable,
+      webSearchAvailable: status?.recruiterWebSearch ?? false,
+      descriptionFor: (key) => [...saved.map((a) => a.job), ...(results?.jobs ?? [])].find((j) => jobKey(j) === key)?.description ?? "",
       getToken,
       applications: saved,
     };
-  }, [contacts, setContacts, active, aiAvailable, getToken, saved]);
+  }, [contacts, setContacts, active, aiAvailable, status, getToken, saved, results]);
   const finderJobs = useMemo(() => [...saved.map((a) => a.job), ...(results?.jobs ?? [])], [saved, results]);
   const importData = (d: AppData, mode: "merge" | "replace") => {
     if (mode === "merge") {

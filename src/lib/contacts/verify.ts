@@ -2,7 +2,7 @@ import { newId } from "@/lib/ids";
 import { todayLocal } from "@/lib/applications";
 import { normalizeCompany, normalizeTitle } from "@/lib/dedupe";
 import { CONTACT_LIMITS as L, type Contact } from "@/types/contacts";
-import { classifyType, isLinkedInProfile, isSeniorHr, newContact, newSource, normName, relevanceFor, scoreEvidence } from "./model";
+import { classifyType, emailBelongsTo, isLinkedInProfile, isSeniorHr, newContact, newSource, normName, relevanceFor, scoreEvidence } from "./model";
 
 /**
  * Decides what a web search actually proved. The model's own words are never evidence: a person is kept only when a
@@ -111,6 +111,24 @@ function roleNearest(pool: string, name: string): string | null {
   return best?.text ?? null;
 }
 
+/**
+ * Whether a detail found at position `at` in a passage belongs to this person: it must be close to their name, and no other
+ * person named in the same passage may be closer. A detail elsewhere on the page, or beside someone else, is not theirs.
+ */
+function ownedBy(line: string, name: string, at: number, others: string[], max = 150): boolean {
+  if (at < 0) return false;
+  const m = nameRegex(name)?.exec(line);
+  if (!m) return false;
+  const dist = (x: RegExpExecArray) => Math.min(Math.abs(at - x.index), Math.abs(at - (x.index + x[0].length)));
+  const mine = dist(m);
+  if (mine > max) return false;
+  for (const o of others) {
+    const mo = nameRegex(o)?.exec(line);
+    if (mo && dist(mo) < mine) return false;
+  }
+  return true;
+}
+
 const BAD_NAME = /\b(team|careers?|department|recruiting|recruitment|hr|human resources|talent acquisition|opportunit|hiring)\b/i;
 
 export function verifyCandidates(raw: RawCandidate[], ev: WebEvidence, job: JobContext, now = new Date()): { contacts: Contact[]; dropped: Dropped[] } {
@@ -148,20 +166,43 @@ export function verifyCandidates(raw: RawCandidate[], ev: WebEvidence, job: JobC
       continue;
     }
 
-    const supported = urls.map((u) => ({ u, pool: poolByUrl.get(u) ?? "", result: resultByUrl.get(u)! })).filter((x) => mentions(x.pool, name));
-    if (!supported.length) {
+    // Each source is judged on its own passage: the one that mentions the person. Evidence elsewhere on the same page
+    // (another person's title, a job named in a different paragraph) is never credited to them.
+    const per = urls
+      .map((u) => ({ u, pool: poolByUrl.get(u) ?? "", result: resultByUrl.get(u)! }))
+      .filter((x) => mentions(x.pool, name))
+      .map((x) => {
+        const line = lineWith(x.pool, name);
+        const host = hostOf(x.u);
+        const onDomain = companyHostPart.length > 2 && host.replace(/[^a-z0-9]/g, "").includes(companyHostPart.replace(/[^a-z0-9]/g, ""));
+        return {
+          ...x,
+          line,
+          near: nearName(x.pool, name),
+          role: roleNearest(x.pool, name),
+          host,
+          onDomain,
+          company: companyKnown && normalizeCompany(line).includes(companyNorm),
+          jobHit: (jobTitleNorm.length > 4 && normalizeTitle(line).includes(jobTitleNorm)) || (applyKey !== null && x.u === applyKey),
+        };
+      });
+    if (!per.length) {
       reject("No source text or result title contained this name.");
       continue;
     }
 
-    const near = supported.map((s) => nearName(s.pool, name)).join(" ");
-    const roleText = supported.map((x) => roleNearest(x.pool, name)).find(Boolean) ?? null;
-    const roleInSource = Boolean(roleText) || ROLE_WORDS.test(near);
-    const poolAll = supported.map((s) => s.pool).join("\n");
-    const companyInSource = companyKnown && normalizeCompany(poolAll).includes(companyNorm);
-    const jobSpecific = (jobTitleNorm.length > 4 && normalizeTitle(poolAll).includes(jobTitleNorm)) || supported.some((s) => applyKey !== null && s.u === applyKey);
-    const hosts = new Set(supported.map((s) => hostOf(s.u)).filter(Boolean));
-    const companyDomain = companyHostPart.length > 2 && [...hosts].some((h) => h.replace(/[^a-z0-9]/g, "").includes(companyHostPart.replace(/[^a-z0-9]/g, "")));
+    const near = per.map((p) => p.near).join(" ");
+    const roleText = per.map((p) => p.role).find(Boolean) ?? null;
+    const roleInSource = per.some((p) => p.role || ROLE_WORDS.test(p.near));
+    const companyDomain = per.some((p) => p.onDomain);
+    // A person at another employer must never be listed for this one: the passage has to name the employer, or be on its own site.
+    const companyInSource = per.some((p) => p.company) || companyDomain;
+    if (!companyInSource) {
+      reject(`No source ties this person to ${job.company}.`);
+      continue;
+    }
+    const jobSpecific = per.some((p) => p.jobHit);
+    const hosts = new Set(per.map((p) => p.host).filter(Boolean));
 
     // A title is kept only if a source says it. Otherwise the role words the source does show are used, or none.
     const claimedTitle = squash(c.title ?? "");
@@ -169,12 +210,13 @@ export function verifyCandidates(raw: RawCandidate[], ev: WebEvidence, job: JobC
     const cautions: string[] = [];
     if (claimedTitle && !titleShown) cautions.push("The title suggested by the search was not confirmed by a source, so it is left out.");
 
-    // A profile link counts only if it is literally a search result, and its result title shows this person.
+    // A profile link counts only if it is literally a search result, and its result title shows this person at this employer.
     const li = c.linkedinUrl && isLinkedInProfile(c.linkedinUrl) && resultByUrl.has(urlKey(c.linkedinUrl)) ? c.linkedinUrl.trim() : null;
     const liResult = li ? resultByUrl.get(urlKey(li)) : null;
-    const linkedinConfirms = Boolean(liResult && normName(liResult.title).includes(normName(name).split(" ")[0]) && normName(liResult.title).includes(normName(name).split(" ").slice(-1)[0]));
+    const liTitle = liResult ? normName(liResult.title) : "";
+    const linkedinConfirms = Boolean(liResult && mentions(liResult.title, name) && liTitle.length > 0 && normalizeCompany(liResult.title).includes(companyNorm));
     const linkedinUrl = li && linkedinConfirms ? li : null;
-    if (c.linkedinUrl && !linkedinUrl) cautions.push("A profile link was suggested, but it was not a search result that matched this person, so it is left out.");
+    if (c.linkedinUrl && !linkedinUrl) cautions.push("A profile link was suggested, but it was not a search result that matched this person at this employer, so it is left out.");
 
     const senior = isSeniorHr(titleShown || claimedTitle);
     const score = scoreEvidence({ nameInSource: true, companyInSource, roleInSource, jobSpecific, companyDomain, linkedinConfirms, distinctSources: hosts.size, senior });
@@ -183,23 +225,30 @@ export function verifyCandidates(raw: RawCandidate[], ev: WebEvidence, job: JobC
       continue;
     }
     if (senior && !jobSpecific) cautions.push("A senior HR leader. Nothing found says they handle this posting.");
-    if (!jobSpecific) cautions.push("No source names this job, so check that they cover this role.");
+    if (!jobSpecific) cautions.push("No source names this job next to them, so check that they cover this role.");
 
-    // An email or phone is kept only if it appears word for word in a source about this person.
-    const email = c.email && new RegExp(c.email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(poolAll) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email) ? c.email.trim() : null;
-    const digits = (s: string) => s.replace(/\D/g, "");
-    const phone = c.phone && digits(c.phone).length >= 10 && digits(poolAll).includes(digits(c.phone)) ? c.phone.trim() : null;
+    // An email or phone is kept only if it sits next to this person's name in a passage and no other person named there is
+    // closer. One elsewhere on the page, or beside someone else, is not theirs.
+    const others = raw.map((r) => squash(r.name ?? "")).filter((n) => n && normName(n) !== normName(name));
+    const wantEmail = c.email?.trim() ?? "";
+    const email = wantEmail && emailBelongsTo(name, wantEmail) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(wantEmail) && per.some((p) => ownedBy(p.line, name, p.line.toLowerCase().indexOf(wantEmail.toLowerCase()), others)) ? wantEmail : null;
+    const wantDigits = (c.phone ?? "").replace(/\D/g, "");
+    const phone =
+      c.phone && wantDigits.length >= 10 && per.some((p) => ownedBy(p.line, name, p.line.search(new RegExp(wantDigits.split("").join("\\D*"))), others))
+        ? c.phone.trim()
+        : null;
 
-    const quote = supported.map((s) => ({ s, text: nearName(s.pool, name, 100) })).find((x) => x.text);
+    const quote = per.map((p) => ({ s: p, text: nearName(p.pool, name, 100) })).find((x) => x.text);
     const type = classifyType(titleShown || near);
-    const sources = supported.map((s) =>
+    const sources = per.map((p) =>
       newSource({
-        url: s.result.url,
-        type: companyDomain && hostOf(s.u) && hostOf(s.u).replace(/[^a-z0-9]/g, "").includes(companyHostPart.replace(/[^a-z0-9]/g, "")) ? "company site" : "search result",
-        evidence: nearName(s.pool, name, 110) || s.result.title,
+        url: p.result.url,
+        type: p.onDomain ? "company site" : "search result",
+        evidence: nearName(p.pool, name, 110) || p.result.title,
         now,
       }),
     );
+
 
     seenNames.add(normName(name));
     contacts.push(

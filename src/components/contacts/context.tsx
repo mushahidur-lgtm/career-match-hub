@@ -25,6 +25,10 @@ export interface ContactsApi {
   profile: CandidateProfile | null;
   resumeText: string;
   aiAvailable: boolean;
+  /** True when paid web lookups for recruiters are switched on for this site. */
+  webSearchAvailable: boolean;
+  /** The posting text for a job, from your latest results and applications. Empty when it is not available. */
+  descriptionFor: (jobKey: string) => string;
   /** The signed-in session's token when cloud sync is set up, for routes that cost money. */
   getToken: () => Promise<string | null>;
   applications: Application[];
@@ -50,6 +54,8 @@ export const ContactsContext = createContext<ContactsApi>({
   profile: null,
   resumeText: "",
   aiAvailable: false,
+  webSearchAvailable: false,
+  descriptionFor: () => "",
   getToken: async () => null,
   applications: [],
 });
