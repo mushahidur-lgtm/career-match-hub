@@ -39,7 +39,7 @@ export function sortJobs(jobs: Job[], key: SortKey): Job[] {
 }
 
 export type ScoreTone = "good" | "info" | "warn";
-export const scoreTone = (score: number): ScoreTone => (score >= 85 ? "good" : score >= 70 ? "info" : "warn");
+export const scoreTone = (score: number): ScoreTone => (score >= 90 ? "good" : score >= 70 ? "info" : "warn");
 
 /** Stops a spreadsheet from running a cell that starts with a formula character. */
 function csvCell(value: unknown): string {

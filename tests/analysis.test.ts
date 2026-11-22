@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { estimateYears, heuristicMatch, heuristicProfile } from "@/lib/heuristics";
+import { estimateYears, heuristicProfile } from "@/lib/heuristics";
+import { scoreJob } from "@/lib/matching/engine";
 import { extractSkills, flattenSkills } from "@/lib/skills";
 import { savedJobsToCsv, formatSalary } from "@/lib/format";
 import { makeJob, makeSaved } from "./helpers";
@@ -37,7 +38,7 @@ describe("experience estimate", () => {
   });
 });
 
-describe("profile and match scoring", () => {
+describe("keyword profile", () => {
   const profile = heuristicProfile(
     "Senior Data Engineer, 9 years of experience. Python, SQL, Azure Data Factory, Snowflake, Databricks, Airflow, Power BI.",
   );
@@ -47,18 +48,10 @@ describe("profile and match scoring", () => {
     expect(profile.recommendedRoles.length).toBeGreaterThanOrEqual(5);
   });
 
-  it("scores a strong fit higher than an unrelated job", () => {
-    const fit = heuristicMatch({ title: "Senior Data Engineer", description: "Python, SQL, Azure Data Factory and Snowflake." }, profile);
-    const other = heuristicMatch({ title: "Senior iOS Developer", description: "Swift, Kotlin and Flutter mobile apps." }, profile);
-    expect(fit.score).toBeGreaterThan(other.score + 30);
-    expect(fit.matchingSkills).toEqual(expect.arrayContaining(["Python", "SQL"]));
-    expect(other.missingSkills).toEqual(expect.arrayContaining(["Swift"]));
-  });
-
-  it("does not mark a skill as matching when only the job asks for it", () => {
-    const m = heuristicMatch({ title: "Data Engineer", description: "Requires Scala and Kafka." }, profile);
-    expect(m.matchingSkills).not.toContain("Scala");
-    expect(m.missingSkills).toContain("Scala");
+  it("feeds the matcher without needing a Claude key", () => {
+    const m = scoreJob({ title: "Senior Data Engineer", description: "Requirements:\n- Python, SQL and Snowflake", location: "Ottawa, ON", workMode: "Hybrid", salary: null, descriptionTruncated: false }, { profile });
+    expect(m.source).toBe("heuristic");
+    expect(m.detail!.requiredMatched).toEqual(expect.arrayContaining(["Python", "SQL", "Snowflake"]));
   });
 });
 

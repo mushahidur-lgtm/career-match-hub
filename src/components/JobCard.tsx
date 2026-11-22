@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Bookmark, BookmarkCheck, Building2, Check, ExternalLink, MapPin, Wallet, X } from "lucide-react";
 import { formatPosted, formatSalary } from "@/lib/format";
 import { APPLICATION_STATUSES, type ApplicationStatus, type Job, type SavedJob } from "@/types/job";
+import { MatchBreakdown } from "./MatchBreakdown";
 import { Badge, ScoreBadge, inputClass, primaryButton, secondaryButton } from "./ui";
 
 interface Props {
@@ -69,7 +70,7 @@ export function JobCard({ job, saved, onSave, onStatus, onRemove }: Props) {
         <span className="text-sm text-muted">{formatPosted(job.postedAt)}</span>
       </div>
 
-      {job.match && <p className="mt-3 max-w-prose text-sm text-muted">{job.match.matchReason}</p>}
+      {job.match && <p className="mt-3 line-clamp-3 max-w-prose text-sm text-muted">{job.match.matchReason}</p>}
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button type="button" className={secondaryButton} onClick={() => setOpen(true)} aria-haspopup="dialog">
@@ -162,7 +163,11 @@ function JobDetail({ job, titleId, onClose, children }: { job: Job; titleId: str
           <span className="text-sm text-muted">{formatPosted(job.postedAt)}</span>
         </div>
 
-        {m ? (
+        {m && m.detail ? (
+          <section aria-label="Match analysis">
+            <MatchBreakdown match={m} />
+          </section>
+        ) : m ? (
           <section aria-label="Match analysis" className="space-y-4">
             <p className="max-w-prose text-sm leading-relaxed">{m.matchReason}</p>
             <div className="grid gap-4 sm:grid-cols-2">

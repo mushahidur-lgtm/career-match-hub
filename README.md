@@ -4,7 +4,7 @@ Upload your resume, see which jobs fit your skills, and track every application 
 
 - **Resume analyzer.** Drop in a PDF, DOCX, TXT or MD file, or paste the text. Claude extracts your experience, seniority, categorized skills and 5 to 8 job titles worth searching. You can fix any skill before searching.
 - **Job search.** Filter by title, city, category, work mode (Remote, Hybrid, On-site), employment type (Full-time, Contract, Part-time) and minimum salary.
-- **Match scoring.** Every job gets a score from 0 to 100 with the skills you have, the gaps, and a one-line reason. 85 and above is green, 70 to 84 is blue, below 70 is amber.
+- **Transparent match scoring.** Every job gets a 0 to 100 score built from six weighted parts you can inspect and re-weight, with required versus preferred skills, related skills, resume evidence, gaps, a confidence level and a plain explanation. 90 and above is green, 70 to 89 is blue, below 70 is amber.
 - **Tracker.** Save jobs, move them through Saved, Applied, Interviewing, Offer and Rejected, add notes, and export to CSV.
 - **Honest about its data.** Jobs come only from a connected job board (Adzuna or JSearch). With no job-board key a deployed site shows no jobs and says so. `npm run dev` shows clearly labelled sample jobs for development only. Resume analysis falls back to a keyword engine when there is no Claude key.
 - **Built for a permanent full-time search.** The default filter is Permanent full-time with a CAD $100,000 minimum. Jobs that state a lower salary are hidden, jobs that state none stay and are marked Salary unknown, and salaries a job board only estimated never hide a job. Edit your cities, roles and minimum in Settings.
@@ -49,9 +49,9 @@ Every key is optional. Put them in `.env.local` for local use, or in Vercel's en
 | Keys set | Resume analysis | Match scores | Jobs |
 | --- | --- | --- | --- |
 | None | Keyword engine | Keyword engine | None in production; sample jobs in `npm run dev` |
-| `ANTHROPIC_API_KEY` | Claude | Claude (top 20 results) | None in production; sample jobs in `npm run dev` |
+| `ANTHROPIC_API_KEY` | Claude | Claude reviews the top 15 | None in production; sample jobs in `npm run dev` |
 | Adzuna or RapidAPI | Keyword engine | Keyword engine | Live |
-| Both | Claude | Claude (top 20 results) | Live |
+| Both | Claude | Claude reviews the top 15 | Live |
 
 If a live provider fails (bad key, rate limit, outage) the app tries the next one, then shows no jobs and tells you why. Sample jobs appear only in development, or where you set `CMH_DEMO=1`. If Claude fails, you get keyword results and a message instead of an error page.
 
@@ -59,7 +59,7 @@ If a live provider fails (bad key, rate limit, outage) the app tries the next on
 
 The app uses `claude-sonnet-4-5` by default, as specified. **Anthropic retires that model on 2026-11-30.** When the API reports it as gone, the app switches to `claude-sonnet-5-5` on its own and keeps using it until the server restarts. To skip the failed first call, set `ANTHROPIC_MODEL=claude-sonnet-5-5` in your environment.
 
-Resume analysis and scoring each make one structured-output request per click, so cost stays low and predictable. Scoring sends a single batched request for the top 20 keyword-ranked results.
+Resume analysis and the search review each make one structured-output request per click, so cost stays low and predictable. The review sends your resume and the top 15 rule-scored results in a single request.
 
 ### Live job data notes
 
@@ -69,11 +69,39 @@ Resume analysis and scoring each make one structured-output request per click, s
 
 ## How matching works
 
-1. **Analysis.** Claude returns the profile as JSON that is validated against a schema. Without a key, a built-in dictionary of about 150 common technologies reads your skills, dates your experience from the work history, and ranks job titles by skill overlap.
-2. **Search.** The server calls the live provider, drops postings that contradict your filters, scores every posting with the keyword engine, and sorts them.
-3. **AI scoring.** If a Claude key is set, the top 20 are sent to Claude in one request with your profile. Claude returns a score, matching skills, missing skills and a reason for each. When Claude scores all 20, only those 20 are shown so every score is on one scale.
+Every job gets a score from 0 to 100 that you can take apart. The score is computed by fixed rules, so the same resume and posting always give the same result. Claude only refines two of the six parts, and its changes are limited.
 
-Scores are guidance about skill and title overlap. They do not predict hiring decisions.
+**The six parts and their default weights** (change them in Settings; they are scaled to 100%):
+
+| Part | Weight | What it looks at |
+| --- | ---: | --- |
+| Technical skills | 30% | Required skills count fully, preferred skills 40%. A related tool (Azure for AWS, Power BI for Tableau) earns partial credit and is listed as related, never as matched |
+| Relevant experience | 25% | Years asked versus years on your resume, and whether the title matches roles you have held |
+| Responsibilities | 20% | The kind of work the job describes (pipelines, reporting, cloud, APIs and so on) against what your resume shows you did |
+| Seniority | 10% | The level in the title or the years asked, against your level |
+| Industry | 5% | Whether the posting's industry appears on your resume |
+| Location and work arrangement | 10% | Your preferred cities and Remote - Canada. Greater Toronto Area, Ottawa and Gatineau include their suburbs |
+
+A part the posting gives no information about is skipped, and the remaining parts share its weight.
+
+**Score limits.** A weighted total is held down in these cases, and the reason is shown on the job:
+
+- Fewer than half of the required skills matched: at most 65.
+- None of the required skills on your resume: at most 55.
+- The role is outside your resume and is not one of your target roles: at most 60.
+- The role is three or more levels above you: at most 55.
+- Outside your preferred cities: at most 69.
+- Too little detail in the posting (low confidence, or fewer than three required skills): at most 89, so a thin posting cannot read as excellent.
+
+**Each job shows:** the score and a confidence level (with the reasons), required and preferred skills matched, required skills you lack, related skills, lines copied from your resume that support the match, experience gaps, seniority, location and salary fit, and a plain-language explanation.
+
+**Required versus preferred.** The posting is read for sections such as Requirements and Nice to have, and for wording such as "an asset" or "is a plus". When it has no structure, every skill counts as required and confidence drops. Adzuna returns only the first 500 characters of a posting, so scores from Adzuna alone carry lower confidence; JSearch supplies full descriptions.
+
+**With a Claude key,** the top 15 results are reviewed against your full resume. Claude scores experience and responsibilities from what you actually did rather than which words appear, and suggests gaps. It cannot invent experience: the experience and responsibilities scores can move at most 25 points from the rule-based value, any resume line it quotes is kept only if it appears word for word in your resume, and it cannot lift a score past the limits above. The skill lists always come from the rules and your profile, never from Claude.
+
+**Your profile is the source of truth.** Matching uses the skills on your profile, so removing a skill you do not have changes your scores. Scores go stale, and the app tells you, when your skills, preferences or weights change after a search.
+
+Scores are guidance about fit. They do not predict hiring decisions.
 
 ## Privacy
 

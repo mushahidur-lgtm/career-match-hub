@@ -1,5 +1,5 @@
-import type { CandidateProfile, Job, MatchResult, Seniority, SkillSet } from "@/types/job";
-import { canonicalSkill, dedupe, extractSkills, flattenSkills, skillPattern } from "@/lib/skills";
+import type { CandidateProfile, Seniority, SkillSet } from "@/types/job";
+import { canonicalSkill, dedupe, extractSkills, flattenSkills } from "@/lib/skills";
 
 /* ---------- Resume analysis without an API key ---------- */
 
@@ -122,78 +122,9 @@ export function heuristicProfile(text: string): CandidateProfile {
   return { summary, yearsOfExperience: years, seniority, skills, detectedRoles: detected, recommendedRoles: recommended, source: "heuristic" };
 }
 
-/* ---------- Keyword match scoring ---------- */
+/* ---------- Skills helper ---------- */
 
-const LEVEL: Record<Seniority, number> = {
-  Entry: 0, Junior: 1, "Mid-level": 2, Senior: 3, Lead: 4, Principal: 5, Manager: 4, Executive: 6,
-};
-
-function titleLevel(title: string): number | null {
-  if (/\b(intern|co-?op|entry)\b/i.test(title)) return 0;
-  if (/\b(junior|jr)\b/i.test(title)) return 1;
-  if (/\b(intermediate|mid)\b/i.test(title)) return 2;
-  if (/\b(senior|sr)\b/i.test(title)) return 3;
-  if (/\b(lead|manager)\b/i.test(title)) return 4;
-  if (/\b(principal|staff|architect|director)\b/i.test(title)) return 5;
-  return null;
-}
-
-const STOP = new Set(["senior", "sr", "junior", "jr", "lead", "principal", "staff", "intermediate", "the", "of", "and", "ii", "iii"]);
-const SYN: Record<string, string> = { engineer: "developer", programmer: "developer", bi: "intelligence" };
-const tokens = (s: string) =>
-  new Set(
-    s
-      .toLowerCase()
-      .replace(/full[\s-]stack/g, "fullstack")
-      .split(/[^a-z0-9.+#]+/)
-      .filter((t) => t && !STOP.has(t))
-      .map((t) => SYN[t] ?? t),
-  );
-
-function titleSimilarity(title: string, roles: string[]): number {
-  const a = tokens(title);
-  let best = 0;
-  for (const role of roles) {
-    const b = tokens(role);
-    if (!b.size) continue;
-    best = Math.max(best, [...b].filter((t) => a.has(t)).length / b.size);
-  }
-  return best;
-}
-
+/** The skills on the profile as one deduplicated list of canonical names. */
 export function profileSkills(skills: SkillSet): string[] {
   return dedupe(flattenSkills(skills).map(canonicalSkill));
-}
-
-export function heuristicMatch(job: Pick<Job, "title" | "description">, profile: CandidateProfile): MatchResult {
-  const text = `${job.title}\n${job.description}`;
-  const mine = profileSkills(profile.skills);
-  const mineLower = new Set(mine.map((s) => s.toLowerCase()));
-  const wanted = flattenSkills(extractSkills(text));
-  const matching = dedupe([
-    ...wanted.filter((s) => mineLower.has(s.toLowerCase())),
-    ...mine.filter((s) => skillPattern(s).test(text)),
-  ]);
-  const matchLower = new Set(matching.map((s) => s.toLowerCase()));
-  const missing = wanted.filter((s) => !mineLower.has(s.toLowerCase()) && !matchLower.has(s.toLowerCase()));
-  const total = matching.length + missing.length;
-
-  // Short postings name few skills, so pull the ratio toward a neutral prior.
-  const skillFit = (matching.length + 1) / (total + 2);
-  const titleFit = titleSimilarity(job.title, [...profile.recommendedRoles, ...profile.detectedRoles]);
-  const level = titleLevel(job.title);
-  const gap = level === null ? 0.5 : Math.abs(level - LEVEL[profile.seniority]);
-  const seniorityFit = Math.max(0, 1 - gap * 0.3);
-
-  const score = Math.round(100 * Math.min(1, 0.62 * skillFit + 0.23 * titleFit + 0.15 * seniorityFit + (skillFit > 0.7 ? 0.04 : 0)));
-
-  const reason: string[] = [
-    total
-      ? `You have ${matching.length} of the ${total} skills this posting names.`
-      : "This posting names no recognisable skills, so the score leans on title and level.",
-    titleFit >= 0.99 ? "The title matches one of your roles." : titleFit > 0.4 ? "The title is close to your roles." : "The title differs from your roles.",
-  ];
-  if (level !== null && gap >= 2) reason.push(level > LEVEL[profile.seniority] ? "It asks for a more senior level." : "It sits below your current level.");
-
-  return { score, matchingSkills: matching.slice(0, 14), missingSkills: missing.slice(0, 10), matchReason: reason.join(" "), source: "heuristic" };
 }

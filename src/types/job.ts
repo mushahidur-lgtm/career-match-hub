@@ -81,12 +81,74 @@ export interface Salary {
   estimated: boolean;
 }
 
+/** How much each part of a match counts toward the 0-100 score. Normalised, so only the ratios matter. */
+export const MATCH_COMPONENTS = ["skills", "experience", "responsibilities", "seniority", "industry", "location"] as const;
+export type MatchComponentKey = (typeof MATCH_COMPONENTS)[number];
+export type MatchWeights = Record<MatchComponentKey, number>;
+
+export const DEFAULT_MATCH_WEIGHTS: MatchWeights = {
+  skills: 30,
+  experience: 25,
+  responsibilities: 20,
+  seniority: 10,
+  industry: 5,
+  location: 10,
+};
+
+export const MATCH_COMPONENT_LABELS: Record<MatchComponentKey, string> = {
+  skills: "Technical skills",
+  experience: "Relevant experience",
+  responsibilities: "Responsibilities",
+  seniority: "Seniority",
+  industry: "Industry",
+  location: "Location and work arrangement",
+};
+
+export interface MatchComponent {
+  key: MatchComponentKey;
+  label: string;
+  /** Share of the final score this part carries, in percent, after skipping parts that do not apply. */
+  weight: number;
+  /** 0-100, or null when the posting gave nothing to judge this part by. */
+  score: number | null;
+  note: string;
+  /** True when Claude moved this score from the rule-based value (always within a fixed limit). */
+  aiAdjusted?: boolean;
+}
+
+export type Confidence = "high" | "medium" | "low";
+
+export interface MatchDetail {
+  confidence: Confidence;
+  confidenceReasons: string[];
+  requiredMatched: string[];
+  requiredMissing: string[];
+  preferredMatched: string[];
+  preferredMissing: string[];
+  /** A skill the job asks for that you lack, with the related skill you do have. */
+  transferable: { skill: string; via: string }[];
+  /** Lines copied word for word from your resume that support the match. */
+  evidence: string[];
+  experienceGaps: string[];
+  seniority: { status: "aligned" | "stretch" | "overqualified" | "unknown"; note: string };
+  location: { status: "yes" | "partial" | "no" | "unknown"; note: string };
+  salary: { status: "meets" | "below" | "unknown"; note: string };
+  components: MatchComponent[];
+  /** Reasons the score was held down despite the weighted total. */
+  caps: string[];
+  explanation: string;
+  aiNote?: string;
+}
+
 export interface MatchResult {
   score: number;
+  /** Required and preferred skills you have. */
   matchingSkills: string[];
+  /** Required skills you lack and have no related skill for. */
   missingSkills: string[];
   matchReason: string;
   source: AnalysisSource;
+  detail?: MatchDetail;
 }
 
 export interface Job {
@@ -123,6 +185,8 @@ export interface SearchPreferences {
   locations: string[];
   primaryRoles: string[];
   secondaryRoles: string[];
+  /** Match weights. Missing means the defaults. */
+  weights?: MatchWeights;
 }
 
 export const DEFAULT_PREFERENCES: SearchPreferences = {

@@ -3,7 +3,15 @@
 import { useRef, useState, type FormEvent } from "react";
 import { Download, HardDriveDownload, Save, Upload } from "lucide-react";
 import { buildBackup, parseBackup, type AppData } from "@/lib/backup";
-import { DEFAULT_PREFERENCES, type SearchPreferences } from "@/types/job";
+import { normalizeWeights } from "@/lib/matching/engine";
+import {
+  DEFAULT_MATCH_WEIGHTS,
+  DEFAULT_PREFERENCES,
+  MATCH_COMPONENTS,
+  MATCH_COMPONENT_LABELS,
+  type MatchComponentKey,
+  type SearchPreferences,
+} from "@/types/job";
 import { Notice, inputClass, primaryButton, secondaryButton } from "./ui";
 
 interface Props {
@@ -21,6 +29,11 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport }: 
   const [locations, setLocations] = useState(p.locations.join("\n"));
   const [primary, setPrimary] = useState(p.primaryRoles.join("\n"));
   const [secondary, setSecondary] = useState(p.secondaryRoles.join("\n"));
+  const initialWeights = p.weights ?? DEFAULT_MATCH_WEIGHTS;
+  const [weights, setWeights] = useState<Record<MatchComponentKey, string>>(
+    () => Object.fromEntries(MATCH_COMPONENTS.map((k) => [k, String(Math.round(initialWeights[k]))])) as Record<MatchComponentKey, string>,
+  );
+  const weightTotal = MATCH_COMPONENTS.reduce((n, k) => n + (Number(weights[k]) || 0), 0);
   const [savedMsg, setSavedMsg] = useState(false);
   const [pending, setPending] = useState<{ data: AppData; exportedAt: string } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -30,7 +43,10 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport }: 
   function save(e: FormEvent) {
     e.preventDefault();
     const salary = Math.max(0, Math.round(Number(minSalary) || 0));
-    onSavePreferences({ minSalary: salary, locations: lines(locations), primaryRoles: lines(primary), secondaryRoles: lines(secondary) });
+    const scaled = normalizeWeights(Object.fromEntries(MATCH_COMPONENTS.map((k) => [k, Number(weights[k]) || 0])));
+    const rounded = Object.fromEntries(MATCH_COMPONENTS.map((k) => [k, Math.round(scaled[k] * 10) / 10])) as Record<MatchComponentKey, number>;
+    setWeights(Object.fromEntries(MATCH_COMPONENTS.map((k) => [k, String(Math.round(rounded[k]))])) as Record<MatchComponentKey, string>);
+    onSavePreferences({ minSalary: salary, locations: lines(locations), primaryRoles: lines(primary), secondaryRoles: lines(secondary), weights: rounded });
     setSavedMsg(true);
     setTimeout(() => setSavedMsg(false), 2500);
   }
@@ -82,6 +98,19 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport }: 
         <TextList id="pref-locations" label="Cities, one per line" value={locations} onChange={setLocations} rows={5} />
         <TextList id="pref-primary" label="Primary roles, one per line" value={primary} onChange={setPrimary} rows={6} />
         <TextList id="pref-secondary" label="Secondary roles, one per line" value={secondary} onChange={setSecondary} rows={8} />
+        <fieldset className="space-y-3">
+          <legend className="text-sm font-medium">How much each part of a match counts</legend>
+          <p className="text-xs text-muted">Set any numbers you like. They are scaled to 100% when you save. A part the posting gives no information about is skipped and the rest share its weight.</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {MATCH_COMPONENTS.map((k) => (
+              <div key={k} className="flex flex-col gap-1 text-sm">
+                <label htmlFor={`w-${k}`}>{MATCH_COMPONENT_LABELS[k]}</label>
+                <input id={`w-${k}`} type="number" min={0} max={100} value={weights[k]} onChange={(e) => setWeights((w) => ({ ...w, [k]: e.target.value }))} className={inputClass} />
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted" aria-live="polite">Total entered: {weightTotal}</p>
+        </fieldset>
         <div className="flex flex-wrap items-center gap-3">
           <button type="submit" className={primaryButton}>
             <Save className="size-4" aria-hidden /> Save preferences
@@ -94,6 +123,7 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport }: 
               setLocations(DEFAULT_PREFERENCES.locations.join("\n"));
               setPrimary(DEFAULT_PREFERENCES.primaryRoles.join("\n"));
               setSecondary(DEFAULT_PREFERENCES.secondaryRoles.join("\n"));
+              setWeights(Object.fromEntries(MATCH_COMPONENTS.map((k) => [k, String(DEFAULT_MATCH_WEIGHTS[k])])) as Record<MatchComponentKey, string>);
             }}
           >
             Reset to defaults

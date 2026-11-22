@@ -42,7 +42,9 @@ const check =
     return r.success ? r.data : undefined;
   };
 
-const profileKeyOf = (p: CandidateProfile | null) => (p ? JSON.stringify([p.seniority, ...profileSkills(p.skills).sort()]) : "");
+/** Anything that changes a score. When it differs from the last search, the scores on screen are out of date. */
+const profileKeyOf = (p: CandidateProfile | null, prefs: SearchPreferences) =>
+  p ? JSON.stringify([p.seniority, p.yearsOfExperience, ...profileSkills(p.skills).sort(), prefs.locations, prefs.minSalary, prefs.weights ?? null]) : "";
 
 export default function Home() {
   const [tab, setTab, hydrated] = usePersistentState<Tab>("cmh:tab", "resume", (v) => (v === "resume" || v === "search" || v === "saved" || v === "settings" ? v : undefined));
@@ -72,7 +74,7 @@ export default function Home() {
 
   const savedById = useMemo(() => new Map(saved.map((s) => [s.job.id, s])), [saved]);
   const sorted = useMemo(() => (results ? sortJobs(results.jobs, sort) : []), [results, sort]);
-  const stale = Boolean(results && profile && results.profileKey !== profileKeyOf(profile));
+  const stale = Boolean(results && profile && results.profileKey !== profileKeyOf(profile, preferences));
 
   const search = useCallback(
     async (next?: Filters) => {
@@ -83,21 +85,21 @@ export default function Home() {
         const res = await fetch("/api/search-jobs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filters: f, profile }),
+          body: JSON.stringify({ filters: f, profile, resumeText: resume?.text ?? null, preferences }),
         });
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as Partial<ApiError> | null;
           throw new Error(body?.error || "The search failed. Try again.");
         }
         const data = (await res.json()) as SearchResponse;
-        setResults({ ...data, filters: f, searchedAt: new Date().toISOString(), profileKey: profileKeyOf(profile) });
+        setResults({ ...data, filters: f, searchedAt: new Date().toISOString(), profileKey: profileKeyOf(profile, preferences) });
       } catch (err) {
         setSearchError(err instanceof Error ? err.message : "The search failed. Try again.");
       } finally {
         setLoading(false);
       }
     },
-    [filters, profile, setResults],
+    [filters, profile, resume, preferences, setResults],
   );
 
   const saveJob = (job: Job, st: ApplicationStatus) => {

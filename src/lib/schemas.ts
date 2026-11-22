@@ -4,6 +4,7 @@ import {
   EMPLOYMENT_FILTERS,
   EMPLOYMENT_TYPES,
   JOB_CATEGORIES,
+  MATCH_COMPONENTS,
   SENIORITY_LEVELS,
   WORK_MODES,
 } from "@/types/job";
@@ -49,19 +50,61 @@ export const FiltersSchema = z.object({
   minSalary: z.number().min(0).max(10_000_000).nullable(),
 });
 
+export const WeightsSchema = z.object({
+  skills: z.number().min(0).max(1000),
+  experience: z.number().min(0).max(1000),
+  responsibilities: z.number().min(0).max(1000),
+  seniority: z.number().min(0).max(1000),
+  industry: z.number().min(0).max(1000),
+  location: z.number().min(0).max(1000),
+});
+
 export const PreferencesSchema = z.object({
   minSalary: z.number().min(0).max(10_000_000),
   locations: strList(30),
   primaryRoles: strList(60),
   secondaryRoles: strList(60),
+  weights: WeightsSchema.optional(),
+});
+
+const noteList = z.array(str(400)).max(40);
+export const MatchDetailSchema = z.object({
+  confidence: z.enum(["high", "medium", "low"]),
+  confidenceReasons: noteList,
+  requiredMatched: strList(),
+  requiredMissing: strList(),
+  preferredMatched: strList(),
+  preferredMissing: strList(),
+  transferable: z.array(z.object({ skill: str(120), via: str(120) })).max(100),
+  evidence: noteList,
+  experienceGaps: noteList,
+  seniority: z.object({ status: z.enum(["aligned", "stretch", "overqualified", "unknown"]), note: str(400) }),
+  location: z.object({ status: z.enum(["yes", "partial", "no", "unknown"]), note: str(400) }),
+  salary: z.object({ status: z.enum(["meets", "below", "unknown"]), note: str(400) }),
+  components: z
+    .array(
+      z.object({
+        key: z.enum(MATCH_COMPONENTS),
+        label: str(100),
+        weight: z.number(),
+        score: z.number().nullable(),
+        note: str(800),
+        aiAdjusted: z.boolean().optional(),
+      }),
+    )
+    .max(10),
+  caps: noteList,
+  explanation: str(3000),
+  aiNote: str(1000).optional(),
 });
 
 export const MatchSchema = z.object({
   score: z.number(),
   matchingSkills: strList(),
   missingSkills: strList(),
-  matchReason: str(2000),
+  matchReason: str(3000),
   source: z.enum(["ai", "heuristic"]),
+  detail: MatchDetailSchema.optional(),
 });
 
 export const JobSchema = z.object({

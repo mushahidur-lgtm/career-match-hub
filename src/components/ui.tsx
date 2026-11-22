@@ -17,7 +17,7 @@ const tones: Record<ScoreTone, string> = {
 };
 
 export function ScoreBadge({ score, source, large = false }: { score: number; source?: "ai" | "heuristic"; large?: boolean }) {
-  const label = scoreTone(score) === "good" ? "Strong match" : scoreTone(score) === "info" ? "Good match" : "Partial match";
+  const label = scoreTone(score) === "good" ? "Excellent match" : scoreTone(score) === "info" ? "Strong match" : "Partial match";
   return (
     <span
       className={`inline-flex shrink-0 flex-col items-center rounded-lg px-2.5 py-1 leading-none ${tones[scoreTone(score)]} ${large ? "min-w-20 py-2" : "min-w-14"}`}
