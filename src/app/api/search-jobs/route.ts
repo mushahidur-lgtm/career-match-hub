@@ -6,7 +6,7 @@ import { applyFilters } from "@/lib/providers/common";
 import { fetchJobs } from "@/lib/providers";
 import { badRequest, rateLimit } from "@/lib/rate-limit";
 import {
-  EMPLOYMENT_TYPES,
+  EMPLOYMENT_FILTERS,
   JOB_CATEGORIES,
   SENIORITY_LEVELS,
   WORK_MODES,
@@ -31,7 +31,7 @@ const RequestSchema = z.object({
     location: text(120),
     category: z.enum(["All", ...JOB_CATEGORIES]),
     workMode: z.enum(["All", ...WORK_MODES]),
-    employmentType: z.enum(["All", ...EMPLOYMENT_TYPES]),
+    employmentType: z.enum(EMPLOYMENT_FILTERS),
     minSalary: z.number().min(0).max(1_000_000).nullable(),
   }),
   profile: z
@@ -147,7 +147,7 @@ export async function POST(req: Request) {
 
   const body: SearchResponse = {
     jobs: top,
-    mode: provider === "demo" ? "demo" : "live",
+    mode: provider === "demo" ? "demo" : provider === "none" ? "unconfigured" : "live",
     provider,
     scoring,
     warnings,

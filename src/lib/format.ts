@@ -1,7 +1,7 @@
 import type { Job, SavedJob, Salary, SortKey } from "@/types/job";
 
 export function formatSalary(s: Salary | null): string {
-  if (!s || (s.min === null && s.max === null)) return "Undisclosed";
+  if (!s || (s.min === null && s.max === null)) return "Salary unknown";
   const money = (n: number) =>
     new Intl.NumberFormat("en-CA", { style: "currency", currency: s.currency, maximumFractionDigits: 0 }).format(n);
   const unit = s.period === "hour" ? "/hr" : "/yr";

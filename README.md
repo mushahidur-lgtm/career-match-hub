@@ -6,7 +6,9 @@ Upload your resume, see which jobs fit your skills, and track every application 
 - **Job search.** Filter by title, city, category, work mode (Remote, Hybrid, On-site), employment type (Full-time, Contract, Part-time) and minimum salary.
 - **Match scoring.** Every job gets a score from 0 to 100 with the skills you have, the gaps, and a one-line reason. 85 and above is green, 70 to 84 is blue, below 70 is amber.
 - **Tracker.** Save jobs, move them through Saved, Applied, Interviewing, Offer and Rejected, add notes, and export to CSV.
-- **Works with no keys.** Without API keys the app runs in **Demo Mode** (sample jobs) with keyword-based analysis. A banner always shows what is live.
+- **Honest about its data.** Jobs come only from a connected job board (Adzuna or JSearch). With no job-board key a deployed site shows no jobs and says so. `npm run dev` shows clearly labelled sample jobs for development only. Resume analysis falls back to a keyword engine when there is no Claude key.
+- **Built for a permanent full-time search.** The default filter is Permanent full-time with a CAD $100,000 minimum. Jobs that state a lower salary are hidden, jobs that state none stay and are marked Salary unknown, and salaries a job board only estimated never hide a job. Edit your cities, roles and minimum in Settings.
+- **Your data stays yours.** Settings exports and imports a JSON backup. Existing data is snapshotted before any upgrade, and unreadable data is set aside rather than overwritten.
 
 Built with Next.js 16 (App Router), TypeScript, Tailwind CSS 4 and the Anthropic SDK.
 
@@ -20,7 +22,7 @@ cp .env.example .env.local   # optional: add your keys
 npm run dev
 ```
 
-Open http://localhost:3000. With no keys you can use the whole app in Demo Mode.
+Open http://localhost:3000. With no keys the dev server shows sample jobs so you can try the whole app.
 
 | Command | What it does |
 | --- | --- |
@@ -28,6 +30,7 @@ Open http://localhost:3000. With no keys you can use the whole app in Demo Mode.
 | `npm run build` | Production build (also type-checks) |
 | `npm run start` | Serve the production build |
 | `npm run lint` | Run ESLint |
+| `npm test` | Run the automated tests (Vitest) |
 | `npm run typecheck` | Run the TypeScript compiler without emitting files |
 
 ## API keys
@@ -45,12 +48,12 @@ Every key is optional. Put them in `.env.local` for local use, or in Vercel's en
 
 | Keys set | Resume analysis | Match scores | Jobs |
 | --- | --- | --- | --- |
-| None | Keyword engine | Keyword engine | Demo sample jobs |
-| `ANTHROPIC_API_KEY` | Claude | Claude (top 20 results) | Demo sample jobs |
+| None | Keyword engine | Keyword engine | None in production; sample jobs in `npm run dev` |
+| `ANTHROPIC_API_KEY` | Claude | Claude (top 20 results) | None in production; sample jobs in `npm run dev` |
 | Adzuna or RapidAPI | Keyword engine | Keyword engine | Live |
 | Both | Claude | Claude (top 20 results) | Live |
 
-If a live provider fails (bad key, rate limit, outage) the app tries the next one, then falls back to Demo Mode and tells you why. If Claude fails, you get keyword results and a message instead of an error page.
+If a live provider fails (bad key, rate limit, outage) the app tries the next one, then shows no jobs and tells you why. Sample jobs appear only in development, or where you set `CMH_DEMO=1`. If Claude fails, you get keyword results and a message instead of an error page.
 
 ### The Claude model
 
@@ -98,13 +101,13 @@ git push -u origin main
 
 **One click:** https://vercel.com/new/clone?repository-url=https://github.com/mushahidur-lgtm/career-match-hub
 
-The link deploys with no keys, so the site starts in Demo Mode. Add keys afterwards under Project Settings, Environment Variables, then redeploy.
+The link deploys with no keys, so the site finds no jobs until you add a job-board key. Add keys afterwards under Project Settings, Environment Variables, then redeploy.
 
 **Or from the dashboard:**
 
 1. Go to https://vercel.com/new and import `career-match-hub`.
 2. Leave the framework preset on Next.js and the defaults as they are.
-3. Under Environment Variables, add whichever keys you have (see the table above). You can leave all of them out to launch in Demo Mode.
+3. Under Environment Variables, add whichever keys you have (see the table above). A job-board key is needed for any real listings.
 4. Click Deploy.
 
 **Or from the CLI:** `npx vercel` then `npx vercel --prod`. Add keys with `npx vercel env add ANTHROPIC_API_KEY`.
@@ -144,7 +147,7 @@ src/
 ## Troubleshooting
 
 - **"No text was found in this PDF."** The PDF is a scan. Export a text-based PDF or paste the text.
-- **Banner says Demo Mode after adding keys.** Restart `npm run dev` so the new environment is loaded. If a live search failed, the results page shows the reason above the list.
+- **Banner says no job source is connected after adding keys.** Restart `npm run dev` so the new environment is loaded. If a live search failed, the results page shows the reason above the list.
 - **"The Anthropic API key was rejected."** Check `ANTHROPIC_API_KEY` for stray spaces or quotes.
 - **Claude requests go somewhere unexpected.** The Anthropic SDK honours an `ANTHROPIC_BASE_URL` environment variable. If one is set in your shell or tooling, requests go there instead of to Anthropic. Unset it to use the default endpoint.
 - **A console warning says the model is deprecated.** That is the SDK noting that `claude-sonnet-4-5` retires on 2026-11-30. Set `ANTHROPIC_MODEL=claude-sonnet-5-5` to move off it.

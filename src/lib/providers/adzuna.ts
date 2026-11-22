@@ -83,17 +83,14 @@ export async function searchAdzuna(f: SearchFilters): Promise<Job[]> {
     });
     if (keywords) params.set("what", keywords);
     if (!remote) {
-      params.set("where", cityOf(f.location));
-      params.set("distance", "30");
+      const gta = /greater toronto|gta/i.test(f.location);
+      params.set("where", gta ? "Toronto" : cityOf(f.location));
+      params.set("distance", gta ? "60" : "30");
     }
-    if (f.employmentType === "Full-time") params.set("full_time", "1");
+    if (f.employmentType === "Full-time" || f.employmentType === "Permanent full-time") params.set("full_time", "1");
     if (f.employmentType === "Contract") params.set("contract", "1");
     if (f.employmentType === "Part-time") params.set("part_time", "1");
-    if (f.minSalary) {
-      params.set("salary_min", String(f.minSalary));
-      // Without this Adzuna drops every posting that has no salary.
-      params.set("salary_include_unknown", "1");
-    }
+    // No salary_min here: Adzuna filters on its own predicted salaries, which would hide jobs that state none.
     const data = await fetchJson<AdzunaResponse>(
       `https://api.adzuna.com/v1/api/jobs/${country}/search/1?${params}`,
       { headers: { Accept: "application/json" } },

@@ -1,5 +1,6 @@
 import type {
   EmploymentType,
+  EmploymentTypeFilter,
   Job,
   JobCategory,
   SearchFilters,
@@ -54,7 +55,7 @@ export function inferWorkMode(title: string, description: string, remoteFlag?: b
 export function inferEmploymentType(title: string, description: string): EmploymentType {
   const t = `${title}\n${description.slice(0, 1500)}`;
   if (/\b(?:intern|internship|co-?op)\b/i.test(title)) return "Internship";
-  if (/\bcontract(?:or)?\b|\bC2C\b|\bcorp[- ]to[- ]corp\b|\bfixed[- ]term\b|\btemp(?:orary)?\b|\b\d+[- ]month\b/i.test(t)) return "Contract";
+  if (/\bcontract(?:or)?\b|\bfreelance\b|\bC2C\b|\bcorp[- ]to[- ]corp\b|\bfixed[- ]term\b|\btemp(?:orary)?\b|\b\d+[- ]month\b/i.test(t)) return "Contract";
   if (/\bpart[- ]time\b/i.test(t)) return "Part-time";
   if (/\bfull[- ]time\b|\bpermanent\b/i.test(t)) return "Full-time";
   return "Not stated";
@@ -80,6 +81,13 @@ export function inferCategory(title: string, description = ""): JobCategory {
   return "Other";
 }
 
+/** A posting that does not state its employment type is kept, so it can be checked by hand. */
+export function employmentMatches(job: Pick<Job, "employmentType">, filter: EmploymentTypeFilter): boolean {
+  if (filter === "All" || job.employmentType === "Not stated") return true;
+  if (filter === "Permanent full-time") return job.employmentType === "Full-time";
+  return job.employmentType === filter;
+}
+
 /** Drops jobs that clearly contradict a filter. A job that does not state a value is kept. */
 export function applyFilters(jobs: Job[], f: SearchFilters): Job[] {
   return jobs.filter((job) => {
@@ -89,8 +97,9 @@ export function applyFilters(jobs: Job[], f: SearchFilters): Job[] {
         job.workMode === f.workMode || (f.workMode === "On-site" && job.workMode === "Not stated");
       if (!ok) return false;
     }
-    if (f.employmentType !== "All" && job.employmentType !== "Not stated" && job.employmentType !== f.employmentType) return false;
-    if (f.minSalary) {
+    if (!employmentMatches(job, f.employmentType)) return false;
+    // A figure Adzuna predicted is a guess, not a stated salary, so it never excludes a job.
+    if (f.minSalary && job.salary && !job.salary.estimated) {
       const y = yearlySalary(job);
       if (y !== null && y < f.minSalary) return false;
     }

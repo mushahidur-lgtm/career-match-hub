@@ -3,7 +3,7 @@
 import { useId, type FormEvent } from "react";
 import { Search } from "lucide-react";
 import {
-  EMPLOYMENT_TYPES,
+  EMPLOYMENT_FILTERS,
   JOB_CATEGORIES,
   LOCATION_PRESETS,
   WORK_MODES,
@@ -22,11 +22,14 @@ interface Props {
   onSearch: () => void;
   loading: boolean;
   suggestions: string[];
+  /** Preferred cities, listed first in the City menu. */
+  locations: string[];
 }
 
-export function SearchFilters({ filters, onChange, onSearch, loading, suggestions }: Props) {
+export function SearchFilters({ filters, onChange, onSearch, loading, suggestions, locations }: Props) {
   const uid = useId();
-  const preset = (LOCATION_PRESETS as readonly string[]).includes(filters.location) ? filters.location : CUSTOM;
+  const cities = [...new Set([...locations, ...LOCATION_PRESETS])];
+  const preset = cities.includes(filters.location) ? filters.location : CUSTOM;
   const set = <K extends keyof Filters>(key: K, value: Filters[K]) => onChange({ ...filters, [key]: value });
 
   function submit(e: FormEvent) {
@@ -60,7 +63,7 @@ export function SearchFilters({ filters, onChange, onSearch, loading, suggestion
         <div className={field}>
           <label htmlFor={`${uid}-city`}>City</label>
           <select id={`${uid}-city`} value={preset} onChange={(e) => set("location", e.target.value === CUSTOM ? "" : e.target.value)} className={inputClass}>
-            {LOCATION_PRESETS.map((l) => (
+            {cities.map((l) => (
               <option key={l} value={l}>
                 {l}
               </option>
@@ -110,26 +113,16 @@ export function SearchFilters({ filters, onChange, onSearch, loading, suggestion
           </select>
         </div>
 
-        <fieldset className={field}>
-          <legend className="mb-1.5">Employment type</legend>
-          <div className="inline-flex w-full rounded-lg border border-line bg-surface-2 p-0.5">
-            {(["All", ...EMPLOYMENT_TYPES] as EmploymentTypeFilter[]).map((t) => (
-              <label key={t} className="flex-1">
-                <input
-                  type="radio"
-                  name={`${uid}-type`}
-                  value={t}
-                  checked={filters.employmentType === t}
-                  onChange={() => set("employmentType", t)}
-                  className="peer sr-only"
-                />
-                <span className="block cursor-pointer rounded-md px-1 py-1.5 text-center text-[13px] font-medium text-muted peer-checked:bg-brand peer-checked:text-on-brand peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-brand">
-                  {t}
-                </span>
-              </label>
+        <div className={field}>
+          <label htmlFor={`${uid}-type`}>Employment type</label>
+          <select id={`${uid}-type`} value={filters.employmentType} onChange={(e) => set("employmentType", e.target.value as EmploymentTypeFilter)} className={inputClass}>
+            {EMPLOYMENT_FILTERS.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
             ))}
-          </div>
-        </fieldset>
+          </select>
+        </div>
 
         <div className={field}>
           <label htmlFor={`${uid}-salary`}>Minimum salary (per year)</label>
@@ -158,7 +151,7 @@ export function SearchFilters({ filters, onChange, onSearch, loading, suggestion
           {loading ? <Spinner /> : <Search className="size-4" aria-hidden />}
           {loading ? "Searching" : "Search jobs"}
         </button>
-        <p className="text-xs text-muted">Jobs that do not state a work mode count as On-site. Jobs with no salary stay in the list.</p>
+        <p className="text-xs text-muted">Jobs that do not state a work mode count as On-site. Jobs with no stated salary stay in the list, marked Salary unknown.</p>
       </div>
     </form>
   );

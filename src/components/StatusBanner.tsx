@@ -1,7 +1,7 @@
 import { Cpu, Database, FlaskConical, Sparkles } from "lucide-react";
 import type { AppStatus, StoredResults } from "@/types/job";
 
-const PROVIDER_NAME = { adzuna: "Adzuna", jsearch: "JSearch", demo: "Demo" } as const;
+const PROVIDER_NAME = { adzuna: "Adzuna", jsearch: "JSearch", demo: "Demo", none: "no provider" } as const;
 
 interface Props {
   status: AppStatus | null;
@@ -9,19 +9,27 @@ interface Props {
 }
 
 export function StatusBanner({ status, results }: Props) {
-  // After a search, report what actually happened (a live search can fall back to demo).
-  const demo = results ? results.mode === "demo" : status ? status.jobProvider === "demo" : null;
+  // After a search, report what actually happened (a live search can fail).
   const provider = results ? results.provider : status?.jobProvider;
+  const kind = provider === undefined ? null : provider === "demo" ? "demo" : provider === "none" ? "none" : "live";
 
   return (
     <div className="flex flex-wrap gap-2 text-sm" aria-live="polite">
-      {demo === null ? (
+      {kind === null ? (
         <span className="rounded-lg border border-line bg-surface px-3 py-1.5 text-muted">Checking configuration</span>
-      ) : demo ? (
+      ) : kind === "none" ? (
+        <span className="inline-flex items-center gap-2 rounded-lg bg-warn-bg px-3 py-1.5 font-medium text-warn">
+          <Database className="size-4" aria-hidden />
+          <span>
+            No job source connected
+            <span className="hidden font-normal sm:inline">. Add Adzuna or RapidAPI keys to search real postings.</span>
+          </span>
+        </span>
+      ) : kind === "demo" ? (
         <span className="inline-flex items-center gap-2 rounded-lg bg-warn-bg px-3 py-1.5 font-medium text-warn">
           <FlaskConical className="size-4" aria-hidden />
           <span>
-            Demo Mode: sample jobs, not real postings
+            Demo Mode (development only): invented sample jobs
             <span className="hidden font-normal sm:inline">. Add Adzuna or RapidAPI keys for live listings.</span>
           </span>
         </span>

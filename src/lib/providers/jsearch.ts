@@ -1,4 +1,4 @@
-import type { EmploymentType, Job, SalaryPeriod, SearchFilters } from "@/types/job";
+import type { EmploymentType, EmploymentTypeFilter, Job, SalaryPeriod, SearchFilters } from "@/types/job";
 import {
   countriesFor,
   fetchJson,
@@ -39,7 +39,12 @@ interface JSearchResponse {
 
 export const jsearchConfigured = () => Boolean(process.env.RAPIDAPI_KEY?.trim());
 
-const TYPE_PARAM = { "Full-time": "FULLTIME", Contract: "CONTRACTOR", "Part-time": "PARTTIME" } as const;
+const TYPE_PARAM: Partial<Record<EmploymentTypeFilter, string>> = {
+  "Permanent full-time": "FULLTIME",
+  "Full-time": "FULLTIME",
+  Contract: "CONTRACTOR",
+  "Part-time": "PARTTIME",
+};
 
 function employmentOf(j: JSearchJob, description: string): EmploymentType {
   const types = j.job_employment_types?.length ? j.job_employment_types : j.job_employment_type ? [j.job_employment_type] : [];
@@ -97,7 +102,8 @@ export async function searchJSearch(f: SearchFilters): Promise<Job[]> {
       date_posted: "month",
     });
     if (remote || f.workMode === "Remote") params.set("work_from_home", "true");
-    if (f.employmentType !== "All") params.set("employment_types", TYPE_PARAM[f.employmentType]);
+    const typeParam = TYPE_PARAM[f.employmentType];
+    if (typeParam) params.set("employment_types", typeParam);
     const data = await fetchJson<JSearchResponse>(
       `https://jsearch.p.rapidapi.com/search?${params}`,
       { headers: { "X-RapidAPI-Key": process.env.RAPIDAPI_KEY!.trim(), "X-RapidAPI-Host": "jsearch.p.rapidapi.com" } },

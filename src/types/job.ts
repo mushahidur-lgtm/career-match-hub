@@ -47,7 +47,9 @@ export type WorkModeFilter = "All" | (typeof WORK_MODES)[number];
 
 export const EMPLOYMENT_TYPES = ["Full-time", "Contract", "Part-time"] as const;
 export type EmploymentType = (typeof EMPLOYMENT_TYPES)[number] | "Internship" | "Not stated";
-export type EmploymentTypeFilter = "All" | (typeof EMPLOYMENT_TYPES)[number];
+/** "Permanent full-time" excludes contract, temporary, freelance, part-time and internship postings. */
+export const EMPLOYMENT_FILTERS = ["All", "Permanent full-time", "Full-time", "Contract", "Part-time"] as const;
+export type EmploymentTypeFilter = (typeof EMPLOYMENT_FILTERS)[number];
 
 export const JOB_CATEGORIES = [
   "Software engineering",
@@ -66,6 +68,8 @@ export type JobCategory = (typeof JOB_CATEGORIES)[number];
 export type JobCategoryFilter = "All" | JobCategory;
 
 export type JobSource = "adzuna" | "jsearch" | "demo";
+/** "none" means no job source is configured, so searches return nothing rather than invented jobs. */
+export type ProviderStatus = JobSource | "none";
 export type SalaryPeriod = "year" | "hour";
 
 export interface Salary {
@@ -112,16 +116,52 @@ export interface SearchFilters {
   minSalary: number | null;
 }
 
+/** What the candidate is looking for. Seeds the search filters and the suggested roles. */
+export interface SearchPreferences {
+  /** Yearly CAD. Jobs that state a salary below this are excluded. */
+  minSalary: number;
+  locations: string[];
+  primaryRoles: string[];
+  secondaryRoles: string[];
+}
+
+export const DEFAULT_PREFERENCES: SearchPreferences = {
+  minSalary: 100_000,
+  locations: ["Greater Toronto Area, ON", "Toronto, ON", "Ottawa, ON", "Gatineau, QC", "Remote - Canada"],
+  primaryRoles: [
+    "Data Engineer",
+    "Azure Data Engineer",
+    "BI Developer",
+    "Business Intelligence Analyst",
+    "Senior Data Analyst",
+    "Analytics Developer",
+  ],
+  secondaryRoles: [
+    "Senior Software Developer",
+    "Senior .NET Developer",
+    "C# Developer",
+    "Azure Developer",
+    "Cloud Engineer",
+    "Power Platform Developer",
+    "Dynamics 365 Developer",
+    "AI/GenAI Developer",
+    "Application Developer",
+    "Integration Developer",
+    "DevOps Engineer",
+  ],
+};
+
 export const DEFAULT_FILTERS: SearchFilters = {
   query: "",
   location: "Ottawa, ON",
   category: "All",
   workMode: "All",
-  employmentType: "All",
-  minSalary: null,
+  employmentType: "Permanent full-time",
+  minSalary: DEFAULT_PREFERENCES.minSalary,
 };
 
 export const LOCATION_PRESETS = [
+  "Greater Toronto Area, ON",
   "Ottawa, ON",
   "Toronto, ON",
   "Gatineau, QC",
@@ -135,8 +175,8 @@ export type SortKey = "score" | "newest" | "salary";
 
 export interface SearchResponse {
   jobs: Job[];
-  mode: "live" | "demo";
-  provider: JobSource;
+  mode: "live" | "demo" | "unconfigured";
+  provider: ProviderStatus;
   scoring: AnalysisSource | "mixed" | "none";
   warnings: string[];
 }
@@ -162,7 +202,7 @@ export interface SavedJob {
 export interface AppStatus {
   ai: boolean;
   model: string | null;
-  jobProvider: JobSource;
+  jobProvider: ProviderStatus;
 }
 
 export interface ParseResumeResponse {

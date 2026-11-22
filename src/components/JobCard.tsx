@@ -61,7 +61,7 @@ export function JobCard({ job, saved, onSave, onStatus, onRemove }: Props) {
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Badge tone={modeTone[job.workMode]}>{job.workMode}</Badge>
-        <Badge tone={typeTone[job.employmentType]}>{job.employmentType}</Badge>
+        <Badge tone={typeTone[job.employmentType]}>{job.employmentType === "Not stated" ? "Type not stated" : job.employmentType}</Badge>
         <span className="inline-flex items-center gap-1.5 text-sm">
           <Wallet className="size-4 text-muted" aria-hidden />
           <span className={job.salary ? "font-medium" : "text-muted"}>{formatSalary(job.salary)}</span>
@@ -156,7 +156,7 @@ function JobDetail({ job, titleId, onClose, children }: { job: Job; titleId: str
       <div className="space-y-6 p-5">
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={modeTone[job.workMode]}>{job.workMode}</Badge>
-          <Badge tone={typeTone[job.employmentType]}>{job.employmentType}</Badge>
+          <Badge tone={typeTone[job.employmentType]}>{job.employmentType === "Not stated" ? "Type not stated" : job.employmentType}</Badge>
           <Badge>{job.category}</Badge>
           <span className="text-sm font-medium">{formatSalary(job.salary)}</span>
           <span className="text-sm text-muted">{formatPosted(job.postedAt)}</span>

@@ -1,18 +1,24 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bookmark, BriefcaseBusiness, FileUser, Radar } from "lucide-react";
+import { Bookmark, BriefcaseBusiness, FileUser, Radar, Settings } from "lucide-react";
+import type { z } from "zod";
 import { JobCard } from "@/components/JobCard";
 import { ResumeUploader } from "@/components/ResumeUploader";
 import { SavedJobsBoard } from "@/components/SavedJobsBoard";
 import { SearchFilters } from "@/components/SearchFilters";
+import { SettingsPanel } from "@/components/SettingsPanel";
 import { StatusBanner } from "@/components/StatusBanner";
 import { Notice, inputClass } from "@/components/ui";
+import { jobKey, mergeSavedJobs, type AppData } from "@/lib/backup";
 import { sortJobs } from "@/lib/format";
+import { FiltersSchema, PreferencesSchema, ProfileSchema, ResumeSchema, SavedJobsSchema } from "@/lib/schemas";
 import { profileSkills } from "@/lib/heuristics";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import {
   DEFAULT_FILTERS,
+  DEFAULT_PREFERENCES,
+  type SearchPreferences,
   type ApiError,
   type AppStatus,
   type ApplicationStatus,
@@ -26,17 +32,27 @@ import {
   type StoredResume,
 } from "@/types/job";
 
-type Tab = "resume" | "search" | "saved";
+type Tab = "resume" | "search" | "saved" | "settings";
+
+/** Adapts a schema for usePersistentState: undefined marks stored data that does not fit. */
+const check =
+  <S extends z.ZodType>(schema: S) =>
+  (value: unknown): z.infer<S> | undefined => {
+    const r = schema.safeParse(value);
+    return r.success ? r.data : undefined;
+  };
 
 const profileKeyOf = (p: CandidateProfile | null) => (p ? JSON.stringify([p.seniority, ...profileSkills(p.skills).sort()]) : "");
 
 export default function Home() {
-  const [tab, setTab, hydrated] = usePersistentState<Tab>("cmh:tab", "resume");
-  const [resume, setResume] = usePersistentState<StoredResume | null>("cmh:resume", null);
-  const [profile, setProfile] = usePersistentState<CandidateProfile | null>("cmh:profile", null);
-  const [filters, setFilters] = usePersistentState<Filters>("cmh:filters", DEFAULT_FILTERS);
+  const [tab, setTab, hydrated] = usePersistentState<Tab>("cmh:tab", "resume", (v) => (v === "resume" || v === "search" || v === "saved" || v === "settings" ? v : undefined));
+  const [resume, setResume, , , resumeLost] = usePersistentState<StoredResume | null>("cmh:resume", null, check(ResumeSchema.nullable()));
+  const [profile, setProfile, , , profileLost] = usePersistentState<CandidateProfile | null>("cmh:profile", null, check(ProfileSchema.nullable()));
+  const [filters, setFilters] = usePersistentState<Filters>("cmh:filters", DEFAULT_FILTERS, check(FiltersSchema));
+  const [preferences, setPreferences] = usePersistentState<SearchPreferences>("cmh:preferences", DEFAULT_PREFERENCES, check(PreferencesSchema));
   const [results, setResults] = usePersistentState<StoredResults | null>("cmh:results", null);
-  const [saved, setSaved] = usePersistentState<SavedJob[]>("cmh:saved", []);
+  const [saved, setSaved, , , savedLost] = usePersistentState<SavedJob[]>("cmh:saved", [], check(SavedJobsSchema));
+  const recovered = resumeLost || profileLost || savedLost;
   const [sort, setSort] = usePersistentState<SortKey>("cmh:sort", "score");
 
   const [status, setStatus] = useState<AppStatus | null>(null);
@@ -86,13 +102,31 @@ export default function Home() {
 
   const saveJob = (job: Job, st: ApplicationStatus) => {
     const now = new Date().toISOString();
-    setSaved((list) => (list.some((s) => s.job.id === job.id) ? list : [{ job, status: st, notes: "", savedAt: now, updatedAt: now }, ...list]));
+    setSaved((list) => (list.some((s) => s.job.id === job.id || jobKey(s.job) === jobKey(job)) ? list : [{ job, status: st, notes: "", savedAt: now, updatedAt: now }, ...list]));
   };
   const setJobStatus = (id: string, st: ApplicationStatus) =>
     setSaved((list) => list.map((s) => (s.job.id === id ? { ...s, status: st, updatedAt: new Date().toISOString() } : s)));
   const setJobNotes = (id: string, notes: string) =>
     setSaved((list) => list.map((s) => (s.job.id === id ? { ...s, notes, updatedAt: new Date().toISOString() } : s)));
   const removeJob = (id: string) => setSaved((list) => list.filter((s) => s.job.id !== id));
+
+  const appData: AppData = { resume, profile, filters, preferences, saved };
+  const importData = (d: AppData, mode: "merge" | "replace") => {
+    if (mode === "merge") {
+      setSaved((list) => mergeSavedJobs(list, d.saved));
+      return;
+    }
+    setResume(d.resume);
+    setProfile(d.profile);
+    setFilters(d.filters);
+    setPreferences(d.preferences);
+    setSaved(mergeSavedJobs([], d.saved));
+    setResults(null);
+  };
+  const savePreferences = (p: SearchPreferences) => {
+    setPreferences(p);
+    setFilters((f) => ({ ...f, minSalary: p.minSalary }));
+  };
 
   const pickRole = (role: string) => {
     setFilters((f) => ({ ...f, query: role }));
@@ -103,6 +137,7 @@ export default function Home() {
     { id: "resume", label: "Resume", icon: FileUser },
     { id: "search", label: "Job search", icon: Radar },
     { id: "saved", label: "Saved jobs", icon: Bookmark, count: saved.length },
+    { id: "settings", label: "Settings", icon: Settings },
   ];
 
   return (
@@ -138,6 +173,15 @@ export default function Home() {
         ))}
       </nav>
 
+      {recovered && (
+        <Notice tone="warn">
+          Some saved data could not be read, so it was set aside instead of deleted.{" "}
+          <button type="button" className="font-semibold underline" onClick={() => setTab("settings")}>
+            Open Settings
+          </button>
+        </Notice>
+      )}
+
       <main className="flex-1" aria-busy={!hydrated}>
         {!hydrated ? null : tab === "resume" ? (
           <ResumeUploader
@@ -164,7 +208,7 @@ export default function Home() {
                 </button>
               </Notice>
             )}
-            <SearchFilters filters={filters} onChange={setFilters} onSearch={() => void search()} loading={loading} suggestions={profile?.recommendedRoles ?? []} />
+            <SearchFilters filters={filters} onChange={setFilters} onSearch={() => void search()} loading={loading} suggestions={[...new Set([...(profile?.recommendedRoles ?? []), ...preferences.primaryRoles, ...preferences.secondaryRoles])]} locations={preferences.locations} />
             {searchError && <Notice tone="error">{searchError}</Notice>}
             {results && (
               <section aria-label="Search results" className="space-y-4" aria-busy={loading}>
@@ -197,8 +241,17 @@ export default function Home() {
                 {stale && <Notice tone="info">Your skills changed after this search, so the scores are out of date. Search again to refresh them.</Notice>}
                 {sorted.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-line px-6 py-12">
-                    <h3 className="font-display text-lg font-semibold">No jobs matched these filters</h3>
-                    <p className="mt-2 max-w-prose text-sm text-muted">Try a broader title, set the category to All, or switch the work mode and employment type back to All.</p>
+                    {results.mode === "unconfigured" ? (
+                      <>
+                        <h3 className="font-display text-lg font-semibold">No job source is connected</h3>
+                        <p className="mt-2 max-w-prose text-sm text-muted">This site does not invent job listings. Add ADZUNA_APP_ID and ADZUNA_APP_KEY, or RAPIDAPI_KEY, in the deployment settings to search real postings.</p>
+                      </>
+                    ) : (
+                      <>
+                        <h3 className="font-display text-lg font-semibold">No jobs matched these filters</h3>
+                        <p className="mt-2 max-w-prose text-sm text-muted">Try a broader title, set the category to All, or switch the work mode and employment type back to All. Postings that state a salary under your minimum are hidden.</p>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <ul className="space-y-4">
@@ -212,6 +265,8 @@ export default function Home() {
               </section>
             )}
           </div>
+        ) : tab === "settings" ? (
+          <SettingsPanel data={appData} recovered={recovered} onSavePreferences={savePreferences} onImport={importData} />
         ) : (
           <SavedJobsBoard items={saved} onStatus={setJobStatus} onNotes={setJobNotes} onRemove={removeJob} onGoSearch={() => setTab("search")} />
         )}
