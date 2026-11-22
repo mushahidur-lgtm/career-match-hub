@@ -32,10 +32,15 @@ function takeSnapshot(s: StorageLike, target: number, fromVersion: number): bool
   const key = snapshotKey(target);
   const keys = appKeys(s);
   if (!keys.length || s.getItem(key) !== null) return false;
-  const copy: Record<string, string> = {};
-  for (const k of keys) copy[k] = s.getItem(k) ?? "";
-  s.setItem(key, JSON.stringify({ takenAt: new Date().toISOString(), fromVersion, keys: copy }));
-  return true;
+  try {
+    const copy: Record<string, string> = {};
+    for (const k of keys) copy[k] = s.getItem(k) ?? "";
+    s.setItem(key, JSON.stringify({ takenAt: new Date().toISOString(), fromVersion, keys: copy }));
+    return true;
+  } catch {
+    // Storage is full or blocked. The step still runs: it never deletes anything, so the data stays where it was.
+    return false;
+  }
 }
 
 export interface MigrationResult {
@@ -64,7 +69,7 @@ export function migrateStorage(s: StorageLike): MigrationResult {
   if (current < 3) {
     snapshot = takeSnapshot(s, 3, current) || snapshot;
     // One resume and profile become the first of several resume versions.
-    upgradeSingleResume(s);
+    if (!upgradeSingleResume(s)) return { migrated: false, snapshot };
   }
 
   s.setItem(VERSION_KEY, String(STORAGE_VERSION));
@@ -90,15 +95,29 @@ export const LEGACY_VERSION_ID = "legacy-1";
 export const nameFromFile = (fileName: string | null, fallback: string) =>
   (fileName ?? "").replace(/\.[A-Za-z0-9]{1,8}$/, "").replace(/[_-]+/g, " ").trim().slice(0, 80) || fallback;
 
-function upgradeSingleResume(s: StorageLike): void {
+/** The keys layout 2 used for the one resume. They are left in place so rolling back to the previous release still works. */
+export const LEGACY_RESUME_KEYS = ["cmh:resume", "cmh:profile"] as const;
+
+/** Returns false only when a step that should have worked failed, so the upgrade is tried again next time. */
+function upgradeSingleResume(s: StorageLike): boolean {
   try {
-    if (s.getItem("cmh:resumes") !== null) return;
+    const existing = s.getItem("cmh:resumes");
+    if (existing !== null) {
+      // An empty list is what a failed earlier attempt leaves behind, so it does not count as migrated.
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(existing);
+      } catch {
+        return true; // unreadable: the app sets it aside when it loads it
+      }
+      if (!Array.isArray(parsed) || parsed.length > 0) return true;
+    }
     const rawResume = s.getItem("cmh:resume");
     const rawProfile = s.getItem("cmh:profile");
-    if (!rawResume || !rawProfile) return;
+    if (!rawResume || !rawProfile) return true;
     const resume = JSON.parse(rawResume) as { text?: unknown; fileName?: unknown; uploadedAt?: unknown } | null;
     const profile = JSON.parse(rawProfile) as unknown;
-    if (!resume || typeof resume.text !== "string" || !profile || typeof profile !== "object") return;
+    if (!resume || typeof resume.text !== "string" || !profile || typeof profile !== "object") return true;
     const fileName = typeof resume.fileName === "string" ? resume.fileName : null;
     const version = {
       id: LEGACY_VERSION_ID,
@@ -110,11 +129,10 @@ function upgradeSingleResume(s: StorageLike): void {
     };
     s.setItem("cmh:resumes", JSON.stringify([version]));
     s.setItem("cmh:activeResume", JSON.stringify(LEGACY_VERSION_ID));
-    // The snapshot taken just before this step holds the originals, so the old keys can go.
-    s.removeItem("cmh:resume");
-    s.removeItem("cmh:profile");
+    return true;
   } catch {
-    /* leave the old keys in place if anything is unreadable; the snapshot keeps them too */
+    // Unreadable old data is left exactly where it is. A write that failed is retried on the next load.
+    return false;
   }
 }
 
@@ -136,9 +154,23 @@ export function listRecovered(s: StorageLike): string[] {
   return out;
 }
 
-/** Removes the upgrade snapshots. They hold a full copy of your old data, resume included. */
+/** True when the versions exist, so the layout 2 copies are only a leftover. */
+function legacyLeftovers(s: StorageLike): string[] {
+  try {
+    const versions = JSON.parse(s.getItem("cmh:resumes") ?? "null");
+    if (!Array.isArray(versions) || versions.length === 0) return [];
+  } catch {
+    return [];
+  }
+  return LEGACY_RESUME_KEYS.filter((k) => s.getItem(k) !== null);
+}
+
+/**
+ * Removes the upgrade snapshots and the old single-resume copies. They hold a full copy of your
+ * previous data, resume text included. The old copies go only if your resume versions exist.
+ */
 export function clearSnapshots(s: StorageLike): number {
-  const keys: string[] = [];
+  const keys: string[] = legacyLeftovers(s);
   for (let i = 0; i < s.length; i++) {
     const k = s.key(i);
     if (k?.startsWith(SNAPSHOT_PREFIX)) keys.push(k);
@@ -148,6 +180,7 @@ export function clearSnapshots(s: StorageLike): number {
 }
 
 export function hasSnapshots(s: StorageLike): boolean {
+  if (legacyLeftovers(s).length) return true;
   for (let i = 0; i < s.length; i++) if (s.key(i)?.startsWith(SNAPSHOT_PREFIX)) return true;
   return false;
 }

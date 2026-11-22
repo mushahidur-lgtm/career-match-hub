@@ -15,6 +15,18 @@ export interface AiProfileData {
   certifications: string[];
 }
 
+/**
+ * Claude's number of years is used only if the resume backs it up: the dated history agrees with it
+ * (within a few years), or the resume itself states that number. Otherwise the dated history wins.
+ */
+export function trustedYears(claimed: number | null, fromHistory: number | null, resumeText: string): number | null {
+  if (claimed === null || !Number.isFinite(claimed) || claimed < 0 || claimed > 60) return null;
+  const years = Math.round(claimed);
+  if (fromHistory !== null && years >= fromHistory - 2 && years <= fromHistory + 3) return years;
+  if (new RegExp(`(?<!\\d)${years}\\s*\\+?\\s*(?:years?|yrs?)\\b`, "i").test(resumeText)) return years;
+  return fromHistory === null && years <= 3 ? years : null;
+}
+
 const DATE_OK = /^(?:19|20)\d{2}(?:-(?:0[1-9]|1[0-2]))?$/;
 const date = (d: string | null) => (d && DATE_OK.test(d.trim()) ? d.trim() : null);
 const trim = (s: string, n: number) => s.replace(/\s+/g, " ").trim().slice(0, n);
@@ -36,6 +48,7 @@ export function buildProfileFromAi(data: AiProfileData, resumeText: string, fall
       })),
       education: data.education.map((e) => ({ credential: trim(e.credential, 200), institution: trim(e.institution, 200), year: date(e.year) })),
       certifications: data.certifications.map((c) => trim(c, 200)),
+      roles: data.detectedRoles.map((r) => trim(r, 120)),
     },
     resumeText,
   );
@@ -44,8 +57,7 @@ export function buildProfileFromAi(data: AiProfileData, resumeText: string, fall
   const education = verified.education.length ? verified.education.slice(0, 15) : (fallback.education ?? []);
   const certifications = dedupe(verified.certifications.length ? verified.certifications : (fallback.certifications ?? [])).slice(0, 30);
 
-  const stated = data.yearsOfExperience !== null && data.yearsOfExperience >= 0 && data.yearsOfExperience <= 60 ? Math.round(data.yearsOfExperience) : null;
-  const years = stated ?? yearsFromHistory(workHistory) ?? fallback.yearsOfExperience;
+  const years = trustedYears(data.yearsOfExperience, yearsFromHistory(workHistory), resumeText) ?? yearsFromHistory(workHistory) ?? fallback.yearsOfExperience;
 
   const profile: CandidateProfile = {
     summary: trim(data.summary, 2000),
@@ -57,7 +69,8 @@ export function buildProfileFromAi(data: AiProfileData, resumeText: string, fall
       cloudData: dedupe(data.skills.cloudData).slice(0, 40),
       tools: dedupe(data.skills.tools).slice(0, 40),
     },
-    detectedRoles: dedupe([...workHistory.map((w) => w.title).filter(Boolean), ...data.detectedRoles]).slice(0, 8),
+    // Only roles the resume supports. These feed the match, so an invented title would inflate scores.
+    detectedRoles: dedupe([...workHistory.map((w) => w.title).filter(Boolean), ...verified.roles]).slice(0, 8),
     recommendedRoles: dedupe(data.recommendedRoles).slice(0, 8),
     source: "ai",
     model,

@@ -72,6 +72,22 @@ describe("recovery of unreadable data", () => {
   });
 });
 
+/** Wraps a storage so writes to some keys fail, like a full quota. */
+function failingOn(inner: ReturnType<typeof memoryStorage>, fails: (key: string) => boolean) {
+  return {
+    getItem: (k: string) => inner.getItem(k),
+    setItem: (k: string, v: string) => {
+      if (fails(k)) throw new Error("QuotaExceededError");
+      inner.setItem(k, v);
+    },
+    removeItem: (k: string) => inner.removeItem(k),
+    key: (i: number) => inner.key(i),
+    get length() {
+      return inner.length;
+    },
+  };
+}
+
 describe("upgrade to resume versions", () => {
   const legacyResume = JSON.stringify({ text: "Senior Data Engineer resume text ".repeat(4), fileName: "Jordan_Lee-CV.pdf", uploadedAt: "2026-11-01T00:00:00Z" });
   const legacyProfile = JSON.stringify({ summary: "s", yearsOfExperience: 9, seniority: "Senior", skills: { languages: ["Python"], frameworks: [], cloudData: [], tools: [] }, detectedRoles: [], recommendedRoles: [], source: "heuristic" });
@@ -87,10 +103,11 @@ describe("upgrade to resume versions", () => {
     expect(JSON.parse(s.getItem("cmh:activeResume")!)).toBe("legacy-1");
   });
 
-  it("saves the originals in a snapshot before removing the old keys", () => {
+  it("saves the originals in a snapshot and keeps the old keys, so rolling back still works", () => {
     const s = atV2();
     expect(migrateStorage(s).snapshot).toBe(true);
-    expect(s.getItem("cmh:resume")).toBeNull();
+    expect(s.getItem("cmh:resume")).toBe(legacyResume);
+    expect(s.getItem("cmh:profile")).toBe(legacyProfile);
     const snap = JSON.parse(s.getItem("cmh:backup:pre-v3")!);
     expect(snap.keys["cmh:resume"]).toBe(legacyResume);
     expect(snap.keys["cmh:profile"]).toBe(legacyProfile);
@@ -132,8 +149,40 @@ describe("upgrade to resume versions", () => {
     const s = atV2();
     migrateStorage(s);
     expect(hasSnapshots(s)).toBe(true);
-    expect(clearSnapshots(s)).toBe(1);
+    // The snapshot, plus the two old single-resume copies that are now only leftovers.
+    expect(clearSnapshots(s)).toBe(3);
     expect(hasSnapshots(s)).toBe(false);
     expect(s.getItem("cmh:resumes")).not.toBeNull();
+    expect(s.getItem("cmh:resume")).toBeNull();
+  });
+
+  it("never clears the old copies unless the resume versions exist", () => {
+    const s = memoryStorage({ [VERSION_KEY]: "2", "cmh:resume": legacyResume, "cmh:profile": legacyProfile, "cmh:resumes": "[]" });
+    expect(hasSnapshots(s)).toBe(false);
+    expect(clearSnapshots(s)).toBe(0);
+    expect(s.getItem("cmh:resume")).toBe(legacyResume);
+  });
+
+  it("still migrates when a failed earlier attempt left an empty list behind", () => {
+    const s = atV2({ "cmh:resumes": "[]" });
+    migrateStorage(s);
+    expect(JSON.parse(s.getItem("cmh:resumes")!)).toHaveLength(1);
+  });
+
+  it("still migrates when the snapshot cannot be written (storage full)", () => {
+    const s = failingOn(atV2(), (k) => k.startsWith("cmh:backup:"));
+    expect(migrateStorage(s)).toEqual({ migrated: true, snapshot: false });
+    expect(JSON.parse(s.getItem("cmh:resumes")!)).toHaveLength(1);
+    expect(s.getItem("cmh:resume")).toBe(legacyResume);
+  });
+
+  it("does not mark the upgrade done when writing the versions fails, so it is tried again", () => {
+    const base = atV2();
+    const failing = failingOn(base, (k) => k === "cmh:resumes");
+    expect(migrateStorage(failing)).toEqual({ migrated: false, snapshot: true });
+    expect(base.getItem(VERSION_KEY)).toBe("2");
+    expect(base.getItem("cmh:resume")).toBe(legacyResume);
+    expect(migrateStorage(base).migrated).toBe(true);
+    expect(JSON.parse(base.getItem("cmh:resumes")!)).toHaveLength(1);
   });
 });

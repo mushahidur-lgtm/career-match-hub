@@ -194,9 +194,9 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport }: 
         </p>
         {snapshots && (
           <div className="rounded-xl border border-line p-4 text-sm">
-            <p className="font-medium">Upgrade snapshots</p>
+            <p className="font-medium">Upgrade copies</p>
             <p className="mt-1 max-w-prose text-muted">
-              Each upgrade saves a copy of your previous data in this browser, so a problem can be undone. The copies include your old resume text. Delete them once you are happy with the upgrade.
+              Each upgrade saves a copy of your previous data in this browser, and keeps the old single-resume copy so you can return to the previous version of the app. The copies include your old resume text. Delete them once you are happy with the upgrade.
             </p>
             {confirmClear ? (
               <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -210,7 +210,7 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport }: 
               </div>
             ) : (
               <button type="button" className={`${secondaryButton} mt-3`} onClick={() => setConfirmClear(true)}>
-                Delete upgrade snapshots
+                Delete upgrade copies
               </button>
             )}
           </div>

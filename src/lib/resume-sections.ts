@@ -203,12 +203,28 @@ function coverage(phrase: string, haystack: string): number {
 
 const appears = (phrase: string, haystack: string) => !!phrase.trim() && ` ${norm(haystack)} `.includes(` ${norm(phrase)} `);
 
-/** Keeps only the jobs, schools and certificates the resume text actually contains. */
-export function verifyAgainstResume<T extends { work?: WorkEntry[]; education?: EducationEntry[]; certifications?: string[] }>(found: T, resumeText: string) {
+const yearInText = (year: string | null, haystack: string) => !!year && new RegExp(`(?<!\\d)${year.slice(0, 4)}(?!\\d)`).test(haystack);
+
+/**
+ * Keeps only what the resume text supports. A job needs its employer and most of its title to
+ * appear, and a date is kept only if its year appears. Schools, certificates and roles need their
+ * words to appear. Anything else Claude listed is dropped, so the profile cannot claim more than
+ * the resume says.
+ */
+export function verifyAgainstResume<T extends { work?: WorkEntry[]; education?: EducationEntry[]; certifications?: string[]; roles?: string[] }>(found: T, resumeText: string) {
   return {
-    work: (found.work ?? []).filter((e) => (e.company.trim() ? appears(e.company, resumeText) : coverage(e.title, resumeText) >= 0.8)),
-    education: (found.education ?? []).filter((e) => (e.institution.trim() ? appears(e.institution, resumeText) : coverage(e.credential, resumeText) >= 0.8)),
+    work: (found.work ?? [])
+      .filter((e) => (e.company.trim() ? appears(e.company, resumeText) && (!e.title.trim() || coverage(e.title, resumeText) >= 0.6) : coverage(e.title, resumeText) >= 0.8))
+      .map((e) => ({
+        ...e,
+        start: yearInText(e.start, resumeText) ? e.start : null,
+        end: yearInText(e.end, resumeText) ? e.end : null,
+      })),
+    education: (found.education ?? [])
+      .filter((e) => (e.institution.trim() ? appears(e.institution, resumeText) : coverage(e.credential, resumeText) >= 0.8))
+      .map((e) => ({ ...e, year: yearInText(e.year, resumeText) ? e.year : null })),
     certifications: (found.certifications ?? []).filter((c) => coverage(c, resumeText) >= 0.8),
+    roles: (found.roles ?? []).filter((r) => coverage(r, resumeText) >= 0.6),
   };
 }
 

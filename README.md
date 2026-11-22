@@ -107,7 +107,7 @@ Scores are guidance about fit. They do not predict hiring decisions.
 ## Privacy
 
 - Your resume versions, profiles, filters, results and saved jobs live in your browser's `localStorage`. Nothing is stored on the server and there is no database.
-- Upgrades save a snapshot of your previous data in the same browser storage so a problem can be undone. Those copies include your old resume text. Settings has a button to delete them once you are happy.
+- Upgrades save a snapshot of your previous data in the same browser storage, and keep the old single-resume copy so you can return to the previous release without losing anything. Those copies include your old resume text. Settings has a button to delete them once you are happy.
 - Uploaded files are parsed in memory on the server and discarded.
 - With `ANTHROPIC_API_KEY` set, your resume text and the job postings in view are sent to Anthropic for analysis and scoring.
 - Anyone who can open a deployed copy can use your API keys through it. Add a Vercel Firewall rate-limit rule, or Vercel Deployment Protection, if the site is public. The app has a small per-instance rate limit, but it resets whenever a serverless instance restarts.
