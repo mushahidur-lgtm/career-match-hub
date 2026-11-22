@@ -42,6 +42,8 @@ export interface CloudApi {
   latestRun: LatestRun | null;
   signIn: (email: string, password: string) => Promise<string | null>;
   signOut: () => Promise<void>;
+  /** The signed-in session's access token, for routes that need to know who is asking. Null when signed out. */
+  accessToken: () => Promise<string | null>;
   enable: () => void;
   disable: () => void;
   syncNow: () => void;
@@ -316,6 +318,10 @@ export function useCloud({ data, apply, updateIntel, intel }: Options): CloudApi
       const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
       // The same wording whatever went wrong, so it does not reveal which accounts exist.
       return error ? "That email and password did not work." : null;
+    },
+    async accessToken() {
+      const { data: d } = (await sb?.auth.getSession()) ?? { data: null };
+      return d?.session?.access_token ?? null;
     },
     async signOut() {
       await sb?.auth.signOut();

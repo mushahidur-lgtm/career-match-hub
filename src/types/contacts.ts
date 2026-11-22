@@ -34,6 +34,8 @@ export interface JobLink {
   jobTitle: string;
   company: string;
   relationship: ContactType;
+  /** Where the job is, so contacts can be filtered by place. */
+  location?: string;
   /** 0 to 100: how directly this person relates to this job, from the evidence. */
   relevance: number;
 }

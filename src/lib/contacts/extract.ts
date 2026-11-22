@@ -99,6 +99,7 @@ export function contactsFromPosting(job: Job, now = new Date()): Contact[] {
               jobKey: key,
               jobTitle: job.title,
               company: job.company,
+              location: job.location,
               relationship: type,
               relevance: relevanceFor({ type, title: h.title, department: "", jobTitle: job.title, jobSpecific: true, senior: isSeniorHr(h.title) }),
             },

@@ -73,7 +73,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: describeToolError(found.toolErrors[0]) }, { status: 502 });
   }
 
-  const { contacts, dropped } = verifyCandidates(found.raw, found.evidence, { jobKey: job.jobKey, jobTitle: job.title, company: job.company, applyUrl: job.applyUrl });
+  const { contacts, dropped } = verifyCandidates(found.raw, found.evidence, { jobKey: job.jobKey, jobTitle: job.title, company: job.company, applyUrl: job.applyUrl, location: job.location });
   const note = contacts.length
     ? dropped.length
       ? `${dropped.length} possible ${dropped.length === 1 ? "contact was" : "contacts were"} left out because no source backed ${dropped.length === 1 ? "it" : "them"} up.`

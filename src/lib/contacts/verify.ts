@@ -45,6 +45,7 @@ export interface JobContext {
   jobTitle: string;
   company: string;
   applyUrl: string | null;
+  location?: string;
 }
 
 export interface Dropped {
@@ -218,7 +219,7 @@ export function verifyCandidates(raw: RawCandidate[], ev: WebEvidence, job: JobC
           confidence: score.confidence,
           lastVerifiedAt: todayLocal(now),
           sources,
-          jobs: [{ jobKey: job.jobKey, jobTitle: job.jobTitle, company: job.company, relationship: type, relevance: relevanceFor({ type, title: titleShown, department: c.department ?? "", jobTitle: job.jobTitle, jobSpecific, senior }) }],
+          jobs: [{ jobKey: job.jobKey, jobTitle: job.jobTitle, company: job.company, location: job.location, relationship: type, relevance: relevanceFor({ type, title: titleShown, department: c.department ?? "", jobTitle: job.jobTitle, jobSpecific, senior }) }],
           origin: "found",
           aiNote: c.note ? squash(c.note).slice(0, L.aiNote) : null,
           cautions,

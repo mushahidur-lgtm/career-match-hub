@@ -12,6 +12,7 @@ Upload your resume, see which jobs fit your skills, and track every application 
 - **Career intelligence.** Charts of what your own searches have shown you: new jobs found per day, average match score, where the jobs are, stated pay bands, remote versus hybrid versus on-site, the skills asked for most (and which you lack), the companies hiring for you, applications by status, how many applications reached an interview, and a comparison of your target roles (for example Data Engineer against BI Developer). Everything is counted from jobs your searches returned and applications you track. It is not the whole market, and the page says so. Each chart is labelled observed or estimate: match scores are the only estimates. Pay counts only what the employer stated in CAD. A conversion rate is withheld until you have sent 5 applications. Sample jobs from demo mode are left out unless you tick a box. Every chart has a table view.
 - **Search history.** Every search is kept in this browser (up to 500 searches and 1,500 jobs, no descriptions), so trends build over days and weeks. Run a search again, delete one, or forget everything. Searches made with no job source connected are not kept.
 - **Cloud sync and a morning run (optional).** Connect your own free Supabase project to sign in, keep your data in step across devices, and have a search run for you every day from 8:00 AM Toronto time. Off by default: without the keys the app is exactly the browser-only app described here. Sync never overwrites a copy it has not seen. The morning run uses rule-based scoring only, so it costs nothing beyond the job-board calls. Setup is below.
+- **HR & Recruiter Finder.** A Find recruiter button on every job (card, details and application) looks for the people publicly tied to hiring for it: names the posting itself states, plus an optional Claude web search. Every person comes with the source that names them and a verification status. Save contacts, track your networking with them (Discovered to Follow-up), schedule follow-ups, and get truthful message drafts. Nothing is ever sent for you. See "HR & Recruiter Finder" below.
 - **Reminders.** The Overview lists follow-ups due, upcoming interviews, application deadlines, expected replies and offer decision dates, from the dates you set. They appear in the app only; nothing is emailed yet.
 - **Honest about its data.** Jobs come only from a connected job board (Adzuna or JSearch). With no job-board key a deployed site shows no jobs and says so. `npm run dev` shows clearly labelled sample jobs for development only. Resume analysis falls back to a keyword engine when there is no Claude key.
 - **Built for a permanent full-time search.** The default filter is Permanent full-time with a CAD $100,000 minimum. Jobs that state a lower salary are hidden, jobs that state none stay and are marked Salary unknown, and salaries a job board only estimated never hide a job. Edit your cities, roles and minimum in Settings.
@@ -140,6 +141,33 @@ This part is optional and needs a free [Supabase](https://supabase.com) project.
 - Sign-in is by email and password with Supabase's session kept in this browser. Use **Sign out** on shared computers.
 - **Delete my cloud data** (Settings) removes the synced copy and the stored runs. It does not touch this device.
 
+## HR & Recruiter Finder
+
+**What it finds, and where from**
+
+1. **The posting itself.** If the posting says "Recruiter: Jane Smith" or "Jane Smith, Talent Acquisition Partner", that is read directly. This is the strongest evidence, it is free, and it runs the first time you open Find recruiter for a job.
+2. **Web search (optional, costs money).** With `ANTHROPIC_API_KEY` set, the button "Search the web for contacts" asks Claude to search the public web with Anthropic's web search tool, up to 4 searches per lookup. Anthropic charges per search plus the normal usage; I have not verified current prices, so check Anthropic's pricing before using it. Web search may also need to be enabled for your Anthropic organisation in the Anthropic Console. The result is saved per job, so reopening a job does not search again.
+3. **You.** Add anyone you found yourself, with where you found them. They are recorded as added by you and stay a "possible match" until you mark them verified.
+4. **Search links.** When nothing is found, links open LinkedIn and Google searches in your own browser. The app never visits LinkedIn.
+
+**What is never done.** The app does not scrape LinkedIn or any site, does not log in anywhere, and does not look for named people in general: web lookups are always for one job at one named company. It never builds an email address from a name pattern, never constructs a profile link, and never sends a message or request.
+
+**How a result is checked.** The model's own words are never evidence. A person is kept only if a search result's title or a passage the search tool quoted from a page contains their name. Then:
+- A job title is kept only if a source shows it next to their name; otherwise it is left blank.
+- An email or phone is kept only if it appears word for word in a source about them.
+- A LinkedIn address is kept only if it was literally a search result whose title shows the person.
+- Confidence (never above 98) and the status come from fixed rules, not from the AI: **Verified** needs the company, a recruiting role and a tie to this job in the sources; **Likely match** needs the company and role; **Possible match** is weaker. A senior HR leader (chief HR officer, VP, head of HR) is never more than "possible" unless a source ties them to this job.
+- Anything the AI wrote about why someone matters is shown separately, labelled as an AI inference.
+- Web pages are untrusted. A page that says something false about itself can still produce a false result, which is why every contact shows its sources and quotes so you can check them.
+
+**Your data.** Contacts are saved in this browser, included in backups and cloud sync, and can be edited or deleted. Deleting is permanent and is remembered so syncing another device cannot bring a contact back. Contacts hold only public professional details plus your own notes and history. Use them responsibly: contact people in line with the site's rules and the law (for example anti-spam rules for commercial email).
+
+**Cost and abuse protection.** The lookup route is rate limited per visitor and per hour per server instance (`FIND_RECRUITER_MAX_PER_HOUR`, default 20). If cloud sync is configured on the site, you must be signed in (and on the `DAILY_RUN_EMAILS` list, if set) to run a web lookup or an AI draft; otherwise anyone who finds the site could spend your Anthropic credit. Sample (demo) jobs never trigger a search.
+
+**Messages.** The networking assistant writes a LinkedIn connection note (kept under 300 characters, LinkedIn's usual limit for a note; check yours), an introduction, a follow-up and an email. It uses your selected resume and the job. It says you applied only if an application date is recorded, refers to earlier contact only if you recorded it, and mentions only skills on your resume that the posting asks for. AI-written drafts are checked the same way and thrown away if they claim anything unsupported. You copy a draft or open it in your email app, and you press "I sent this" yourself to record it. Placeholders like [Your name] are left for you to fill in.
+
+**Limits.** The web-search path has only been tested with mock responses: it has never been run against the live Anthropic web search. Names that appear on no public page cannot be found. LinkedIn profile text is not read.
+
 ## Privacy
 
 - By default your resume versions, profiles, filters, results and saved jobs live only in your browser's `localStorage`. Nothing is stored on the server and there is no database.
@@ -204,6 +232,8 @@ src/
       interview-prep/route.ts     Tailored interview practice, checked against the resume
       status/route.ts             Which features are live (no key values)
       cron/daily/route.ts         Protected morning run (called by GitHub Actions)
+      find-recruiter/route.ts     Guarded Claude web search for a job's recruiters
+      networking-draft/route.ts   Optional AI message drafts, checked for false claims
   components/
     AppShell.tsx                  Sidebar navigation (top bar on phones)
     Overview.tsx                  Overview page
@@ -218,6 +248,7 @@ src/
     InterviewEditor.tsx           One interview, with practice prompts
     InterviewTracker.tsx          Interviews across all applications
     CareerIntelligence.tsx        Charts and role comparison
+    contacts/                     HR & Recruiter Finder page, dialogs and networking assistant
     SearchHistory.tsx             Past searches
     charts.tsx                    Bar, column and line charts with table views
     AddApplicationDialog.tsx      Add a job found elsewhere
@@ -231,6 +262,7 @@ src/
     ai-profile.ts                 Turns Claude's reading into a verified profile
     overview.ts                   Overview numbers
     history.ts, history-load.ts   Recording searches and jobs seen; reading them back
+    contacts/                     Recruiter contacts: model, evidence verifier, drafts, web search
     cloud/                        Optional Supabase sync, sign-in and the morning run
     intelligence.ts               Career intelligence figures, from observed data only
     refine.ts, dedupe.ts          Result filters and duplicate merging

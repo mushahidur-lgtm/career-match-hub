@@ -459,3 +459,33 @@ describe("contacts in backups and sync", () => {
     expect(merged.contacts?.deletedIds).toEqual([c.id]);
   });
 });
+
+/* ---------- searching and filtering saved contacts ---------- */
+
+import { NO_FILTER, filterContacts } from "@/lib/contacts/filter";
+
+describe("searching saved contacts", () => {
+  const list = [
+    person({ id: "a", name: "Jane Smith", title: "Talent Acquisition Partner", jobs: [{ jobKey: "k1", jobTitle: "Senior Data Engineer", company: "Acme Analytics", location: "Ottawa, ON", relationship: "Talent Acquisition", relevance: 80 }] }),
+    person({ id: "b", name: "José Álvarez", company: "Globex", title: "Hiring Manager", status: "Verified", stage: "Connected", jobs: [{ jobKey: "k2", jobTitle: "BI Developer", company: "Globex", location: "Toronto, ON", relationship: "Hiring Manager", relevance: 70 }] }),
+    person({ id: "c", name: "Priya Nair", company: "Initech", title: "HR Manager", notes: "met at a meetup" }),
+  ];
+  const ids = (f: Partial<typeof NO_FILTER>) => filterContacts(list, { ...NO_FILTER, ...f }).map((c) => c.id);
+  it("finds by recruiter name, company, job title and location, ignoring accents and case", () => {
+    expect(ids({ query: "jane" })).toEqual(["a"]);
+    expect(ids({ query: "JOSE alvarez" })).toEqual(["b"]);
+    expect(ids({ query: "globex" })).toEqual(["b"]);
+    expect(ids({ query: "bi developer" })).toEqual(["b"]);
+    expect(ids({ query: "ottawa" })).toEqual(["a"]);
+    expect(ids({ query: "meetup" })).toEqual(["c"]);
+  });
+  it("narrows with more words and filters by kind, status and stage", () => {
+    expect(ids({ query: "ottawa talent" })).toEqual(["a"]);
+    expect(ids({ query: "ottawa toronto" })).toEqual([]);
+    expect(ids({ type: "Hiring Manager" })).toEqual(["b"]);
+    expect(ids({ status: "Verified" })).toEqual(["b"]);
+    expect(ids({ stage: "Connected" })).toEqual(["b"]);
+    expect(ids({ status: "Verified", stage: "Discovered" })).toEqual([]);
+    expect(ids({})).toEqual(["a", "b", "c"]);
+  });
+});

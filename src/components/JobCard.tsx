@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, ExternalLink, MapPin, Wallet } from "lucide-react";
+import { Building2, ExternalLink, MapPin, UsersRound, Wallet } from "lucide-react";
 import { formatSalary } from "@/lib/format";
 import type { Job, SavedJob } from "@/types/job";
+import { useContacts } from "./contacts/context";
 import { JobDetailDialog, type DetailTab } from "./JobDetailDialog";
 import { ConfidenceBadge, FreshnessBadge, SaveControl, modeTone, safeUrl, typeLabel, typeTone, type JobActions } from "./job-parts";
 import { Badge, ScoreBadge, secondaryButton } from "./ui";
@@ -17,6 +18,7 @@ interface Props extends JobActions {
 
 export function JobCard({ job, saved, onSave, onStatus, onRemove }: Props) {
   const [open, setOpen] = useState<DetailTab | null>(null);
+  const contacts = useContacts();
   const titleId = `job-${job.id}-card`;
   const apply = safeUrl(job.applyUrl);
 
@@ -66,6 +68,9 @@ export function JobCard({ job, saved, onSave, onStatus, onRemove }: Props) {
         </button>
         <button type="button" className={secondaryButton} onClick={() => setOpen("match")} aria-haspopup="dialog">
           Match analysis
+        </button>
+        <button type="button" className={secondaryButton} onClick={() => contacts.openFinder(job)} aria-haspopup="dialog">
+          <UsersRound className="size-4" aria-hidden /> Find recruiter
         </button>
         {apply && (
           <a href={apply} target="_blank" rel="noopener noreferrer" className={secondaryButton}>

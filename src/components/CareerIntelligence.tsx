@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { SEEN_MAX } from "@/lib/history";
 import { computeIntelligence, RELEVANT_MIN, SUITABLE_MIN, type RoleRow } from "@/lib/intelligence";
+import { networkingStats } from "@/lib/contacts/model";
+import type { Contact } from "@/types/contacts";
 import type { Application, IntelStore } from "@/types/job";
 import type { Tab } from "./AppShell";
 import { BarList, ChartFrame, ColumnChart, LineChart, Stat } from "./charts";
@@ -16,6 +18,8 @@ interface Props {
   roles: string[];
   hasResume: boolean;
   onGo: (tab: Tab) => void;
+  /** Saved recruiter and HR contacts, for the networking figures. */
+  contacts?: Contact[];
 }
 
 const OBSERVED = "Observed: counted from jobs your searches returned.";
@@ -24,7 +28,8 @@ const ESTIMATE = "Estimate: match scores are calculated by this app (and reviewe
 const money = (n: number | null) => (n === null ? "None stated" : `$${Math.round(n / 1000)}k`);
 const dateLabel = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "");
 
-export function CareerIntelligence({ intel, applications, skills, roles, hasResume, onGo }: Props) {
+export function CareerIntelligence({ intel, applications, skills, roles, hasResume, onGo, contacts = [] }: Props) {
+  const net = networkingStats(contacts);
   const [includeDemo, setIncludeDemo] = useState(false);
   const [a, setA] = useState<string>("");
   const [b, setB] = useState<string>("");
@@ -201,6 +206,34 @@ export function CareerIntelligence({ intel, applications, skills, roles, hasResu
               </div>
             )}
           </section>
+
+          {contacts.length > 0 && (
+            <section aria-label="Networking" className="space-y-3">
+              <h2 className="font-display text-lg font-semibold">Networking</h2>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <ChartFrame title="Contacts by stage" subtitle="Observed: your own saved contacts." table={{ head: ["Stage", "Contacts"], rows: net.byStage.map((s) => [s.label, s.value]) }}>
+                  <BarList rows={net.byStage.filter((s) => s.value > 0)} />
+                </ChartFrame>
+                <ChartFrame
+                  title="Outreach results"
+                  subtitle="Observed: only what you recorded. Counts contacts, not messages."
+                  table={{ head: ["Step", "Contacts"], rows: [["Connection requested", net.requested], ["Connection accepted", net.accepted], ["Replied", net.replied]] }}
+                >
+                  <BarList
+                    rows={[
+                      { label: "Connection requested", value: net.requested },
+                      { label: "Connection accepted", value: net.accepted },
+                      { label: "Replied", value: net.replied },
+                    ]}
+                    max={Math.max(1, net.requested, net.reached)}
+                  />
+                  <p className="mt-3 text-sm text-muted">
+                    {net.enough ? `${net.acceptRate}% of connection requests were accepted.` : "No rate is shown until you have sent at least 5 connection requests. With fewer, one result swings it too much to mean anything."}
+                  </p>
+                </ChartFrame>
+              </div>
+            </section>
+          )}
 
           <section aria-label="Role comparison" className="space-y-3">
             <div>

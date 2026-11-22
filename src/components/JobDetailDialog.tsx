@@ -11,6 +11,7 @@ import { parseRequirements } from "@/lib/matching/requirements";
 import { adviseResume, buildPrepSummary, type ResumeAdvice } from "@/lib/resume-help";
 import type { ApiError, Job, ResumeVersion, SavedJob } from "@/types/job";
 import { MatchBreakdown } from "./MatchBreakdown";
+import { useContacts } from "./contacts/context";
 import { ConfidenceBadge, FreshnessBadge, SaveControl, modeTone, safeUrl, typeLabel, typeTone, type JobActions } from "./job-parts";
 import { Badge, Notice, ScoreBadge, Spinner, inputClass, primaryButton, secondaryButton } from "./ui";
 
@@ -89,6 +90,7 @@ export function JobDetailDialog({ job, saved, initialTab = "overview", onSave, o
   const dialog = useRef<HTMLDialogElement>(null);
   const [tab, setTab] = useState<DetailTab>(initialTab);
   const { resume, aiAvailable } = useContext(DetailContext);
+  const contacts = useContacts();
   const insights = useInsights(job, resume);
   const titleId = `job-${job.id}-title`;
   const apply = safeUrl(job.applyUrl);
@@ -133,6 +135,9 @@ export function JobDetailDialog({ job, saved, initialTab = "overview", onSave, o
           </div>
           <div className="flex items-start gap-2">
             {job.match && <ScoreBadge score={job.match.score} source={job.match.source} large />}
+            <button type="button" className={secondaryButton} onClick={() => contacts.openFinder(job)} aria-haspopup="dialog">
+              Find recruiter
+            </button>
             <button type="button" onClick={() => dialog.current?.close()} aria-label="Close" className="rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-ink">
               <X className="size-5" aria-hidden />
             </button>

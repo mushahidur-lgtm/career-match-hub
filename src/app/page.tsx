@@ -1,10 +1,15 @@
 "use client";
 
 import { Download } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { AppShell, normalizeTab, type Tab } from "@/components/AppShell";
 import { AccountPanel } from "@/components/AccountPanel";
+import { ContactsContext, type ContactsApi } from "@/components/contacts/context";
+import { ContactDialog } from "@/components/contacts/ContactDialog";
+import { NetworkingCard } from "@/components/contacts/NetworkingCard";
+import { RecruiterDialog } from "@/components/contacts/RecruiterDialog";
+import { RecruiterFinder } from "@/components/contacts/RecruiterFinder";
 import { AddApplicationDialog } from "@/components/AddApplicationDialog";
 import { ApplicationDialog, type ApplicationTab } from "@/components/ApplicationDialog";
 import { ApplicationsPage } from "@/components/ApplicationsPage";
@@ -37,7 +42,7 @@ import { DEFAULT_REFINE, RefineSchema, refineJobs, type RefineFilters } from "@/
 import { FiltersSchema, PreferencesSchema, ResumeVersionsSchema } from "@/lib/schemas";
 import { fillStructure, lacksStructure } from "@/lib/resume-sections";
 import { nameFromFile } from "@/lib/storage";
-import { mergeContactStores } from "@/lib/contacts/model";
+import { deleteContact, linkApplication, logActivity, markVerified, mergeContactStores, recordFind, removeActivity, saveContact, unlinkApplication, updateContact } from "@/lib/contacts/model";
 import { readContacts, stashContacts } from "@/lib/contacts/schema";
 import { retryFailedSaves, useUnsavedKeys } from "@/lib/storage-health";
 import { EMPTY_CONTACTS, type ContactsStore } from "@/types/contacts";
@@ -278,6 +283,50 @@ export default function Home() {
     if (d.contacts) setContacts(d.contacts);
   };
   const cloud = useCloud({ data: syncData, apply: applyCloud, updateIntel: setIntel, intel });
+
+  /* ----- recruiter and HR contacts ----- */
+  const contactsRef = useRef(contacts);
+  useEffect(() => {
+    contactsRef.current = contacts;
+  });
+  const [finderJob, setFinderJob] = useState<Job | null>(null);
+  const [contactId, setContactId] = useState<string | null>(null);
+  const getToken = cloud.accessToken;
+  const aiAvailable = status?.ai ?? false;
+  const contactsApi = useMemo<ContactsApi>(() => {
+    const apply = (fn: (s: ContactsStore) => ContactsStore) => {
+      const next = fn(contactsRef.current);
+      contactsRef.current = next;
+      setContacts(next);
+    };
+    const save = (c: Parameters<typeof saveContact>[1]) => {
+      const r = saveContact(contactsRef.current, c);
+      contactsRef.current = r.store;
+      setContacts(r.store);
+      return r;
+    };
+    return {
+      store: contacts,
+      saveCandidate: save,
+      addManual: save,
+      update: (id, patch) => apply((s) => updateContact(s, id, patch)),
+      remove: (id) => apply((s) => deleteContact(s, id)),
+      verify: (id) => apply((s) => markVerified(s, id)),
+      log: (id, a) => apply((s) => logActivity(s, id, a)),
+      removeActivity: (id, aid) => apply((s) => removeActivity(s, id, aid)),
+      linkApp: (id, jobId, link) => apply((s) => linkApplication(s, id, jobId, link)),
+      unlinkApp: (id, jobId) => apply((s) => unlinkApplication(s, id, jobId)),
+      recordFind: (f) => apply((s) => recordFind(s, f)),
+      openFinder: setFinderJob,
+      openContact: setContactId,
+      profile: active?.profile ?? null,
+      resumeText: active?.text ?? "",
+      aiAvailable,
+      getToken,
+      applications: saved,
+    };
+  }, [contacts, setContacts, active, aiAvailable, getToken, saved]);
+  const finderJobs = useMemo(() => [...saved.map((a) => a.job), ...(results?.jobs ?? [])], [saved, results]);
   const importData = (d: AppData, mode: "merge" | "replace") => {
     if (mode === "merge") {
       setSaved((list) => mergeSavedJobs(list, d.saved));
@@ -312,6 +361,7 @@ export default function Home() {
   const detailContext = { resume: active, resumes, aiAvailable: status?.ai ?? false, onNotes: setJobNotes };
 
   return (
+    <ContactsContext.Provider value={contactsApi}>
     <DetailContext.Provider value={detailContext}>
     <AppShell tab={tab} onTab={setTab} counts={{ applications: saved.length, interviews: saved.reduce((n, a) => n + (a.interviews ?? []).filter((i) => i.status === "Scheduled").length, 0) }} status={<StatusBanner status={status} results={results} />}>
       {unsaved.length > 0 && (
@@ -338,7 +388,13 @@ export default function Home() {
 
       <main className="flex-1" aria-busy={!hydrated}>
         {!hydrated ? null : tab === "overview" ? (
-          <Overview stats={stats} resumeName={active?.name ?? null} provider={provider} hasSearched={Boolean(results)} onOpenJob={setDetailJob} onOpenApplication={openApplication} onGo={setTab} extra={cloud.latestRun ? <DailyRunCard run={cloud.latestRun} /> : null} />
+          <Overview stats={stats} resumeName={active?.name ?? null} provider={provider} hasSearched={Boolean(results)} onOpenJob={setDetailJob} onOpenApplication={openApplication} onGo={setTab} extra={
+              <>
+                {cloud.latestRun ? <DailyRunCard run={cloud.latestRun} /> : null}
+                <NetworkingCard onGo={() => setTab("recruiters")} />
+              </>
+            }
+          />
         ) : tab === "profile" ? (
           <ResumeManager
             versions={resumes}
@@ -476,6 +532,8 @@ export default function Home() {
               </section>
             )}
           </div>
+        ) : tab === "recruiters" ? (
+          <RecruiterFinder jobs={finderJobs} />
         ) : tab === "intelligence" ? (
           <CareerIntelligence
             intel={intel}
@@ -484,6 +542,7 @@ export default function Home() {
             roles={[...preferences.primaryRoles, ...preferences.secondaryRoles]}
             hasResume={Boolean(profile)}
             onGo={setTab}
+            contacts={contacts.contacts}
           />
         ) : tab === "history" ? (
           <SearchHistory
@@ -532,6 +591,8 @@ export default function Home() {
           onClose={() => setAdding(false)}
         />
       )}
+      {finderJob && <RecruiterDialog job={finderJob} onClose={() => setFinderJob(null)} />}
+      {contactId && <ContactDialog id={contactId} onClose={() => setContactId(null)} />}
       {detailJob && (
         <JobDetailDialog
           job={detailJob}
@@ -544,5 +605,6 @@ export default function Home() {
       )}
     </AppShell>
     </DetailContext.Provider>
+    </ContactsContext.Provider>
   );
 }

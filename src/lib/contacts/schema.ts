@@ -15,7 +15,7 @@ const str = (max: number) => z.string().max(max);
 const day = z.string().max(10);
 
 const SourceSchema = z.object({ id: str(80), url: str(L.url), type: z.enum(SOURCE_TYPES), evidence: str(L.evidence), discoveredAt: str(40) });
-const JobLinkSchema = z.object({ jobKey: str(500), jobTitle: str(200), company: str(L.company), relationship: z.enum(CONTACT_TYPES), relevance: z.number().min(0).max(100) });
+const JobLinkSchema = z.object({ jobKey: str(500), jobTitle: str(200), company: str(L.company), relationship: z.enum(CONTACT_TYPES), location: str(200).optional(), relevance: z.number().min(0).max(100) });
 const ActivitySchema = z.object({ id: str(80), type: z.enum(ACTIVITY_TYPES), date: day, jobKey: str(500).nullable(), notes: str(L.activityNotes), nextFollowUp: day.nullable() });
 
 export const ContactSchema = z.object({

@@ -202,7 +202,7 @@ export function clampContact(c: Contact): Contact {
     businessPhone: c.businessPhone ? cut(c.businessPhone, L.phone) : null,
     confidence: Math.max(0, Math.min(MAX_CONFIDENCE, Math.round(c.confidence))),
     sources: c.sources.slice(0, L.sourcesMax).map((s) => ({ ...s, url: cut(s.url, L.url), evidence: cut(s.evidence, L.evidence) })),
-    jobs: c.jobs.slice(0, L.jobsMax).map((j) => ({ ...j, jobKey: cut(j.jobKey, 500), jobTitle: cut(j.jobTitle, 200), company: cut(j.company, L.company), relevance: Math.max(0, Math.min(100, Math.round(j.relevance))) })),
+    jobs: c.jobs.slice(0, L.jobsMax).map((j) => ({ ...j, jobKey: cut(j.jobKey, 500), jobTitle: cut(j.jobTitle, 200), company: cut(j.company, L.company), location: j.location ? cut(j.location, 200) : undefined, relevance: Math.max(0, Math.min(100, Math.round(j.relevance))) })),
     aiNote: c.aiNote ? cut(c.aiNote, L.aiNote) : null,
     cautions: c.cautions.slice(0, 5).map((x) => cut(x, L.caution)),
     notes: cut(c.notes, L.notes),

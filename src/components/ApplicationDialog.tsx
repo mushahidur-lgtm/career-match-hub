@@ -14,6 +14,7 @@ import {
   type Recruiter,
 } from "@/types/job";
 import { InterviewEditor, interviewBadge } from "./InterviewEditor";
+import { LinkedContacts } from "./contacts/LinkedContacts";
 import { DetailContext } from "./JobDetailDialog";
 import { safeUrl } from "./job-parts";
 import { Badge, ScoreBadge, inputClass, primaryButton, secondaryButton } from "./ui";
@@ -143,6 +144,9 @@ export function ApplicationDialog({ app, initialTab = "details", onUpdate, onMov
       <div role="tabpanel" className="p-5">
         {tab === "details" && (
           <div className="space-y-8">
+            <Section title="Contacts" help="Recruiters and hiring contacts for this job. Save them from Find recruiter, and record your networking with them.">
+              <LinkedContacts app={app} />
+            </Section>
             <Section title="Dates" help="These drive your reminders. Applying sets the date and a follow-up a week later, and you can change both.">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field label="Applied on" id={`${id}-applied`}>
