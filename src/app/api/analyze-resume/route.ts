@@ -60,7 +60,7 @@ export async function POST(req: Request) {
       schema: ProfileSchema,
       system: SYSTEM,
       user: `<resume>\n${resume}\n</resume>`,
-      maxTokens: 4000,
+      maxTokens: 16000,
     });
     const profile: CandidateProfile = {
       summary: data.summary.trim(),

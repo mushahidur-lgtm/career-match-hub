@@ -51,8 +51,8 @@ const RequestSchema = z.object({
 const ScoreSchema = z.object({
   scores: z.array(
     z.object({
-      index: z.number().int().describe("The index of the job in the list you were given."),
-      score: z.number().int().min(0).max(100),
+      index: z.number().describe("The index of the job in the list you were given."),
+      score: z.number().describe("Fit from 0 to 100."),
       matchingSkills: z.array(z.string()).describe("Skills the job asks for that the candidate has."),
       missingSkills: z.array(z.string()).describe("Skills the job asks for that the candidate lacks."),
       matchReason: z.string().describe("One or two plain sentences explaining the score."),
@@ -115,21 +115,22 @@ export async function POST(req: Request) {
         schema: ScoreSchema,
         system: SCORING_SYSTEM,
         user: `<candidate>\n${JSON.stringify(profileForPrompt(profile))}\n</candidate>\n<jobs>\n${JSON.stringify(jobsForPrompt)}\n</jobs>`,
-        maxTokens: 8000,
+        maxTokens: 16000,
       });
-      let applied = 0;
+      const scoredIndexes = new Set<number>();
       for (const s of data.scores) {
-        const job = batch[s.index];
-        if (!job) continue;
+        const job = Number.isInteger(s.index) ? batch[s.index] : undefined;
+        if (!job || !Number.isFinite(s.score)) continue;
         job.match = {
-          score: s.score,
+          score: Math.min(100, Math.max(0, Math.round(s.score))),
           matchingSkills: s.matchingSkills.slice(0, 12),
           missingSkills: s.missingSkills.slice(0, 10),
           matchReason: s.matchReason.trim(),
           source: "ai",
         };
-        applied++;
+        scoredIndexes.add(s.index);
       }
+      const applied = scoredIndexes.size;
       if (applied === batch.length) {
         // Keep only jobs Claude scored, so every score on screen is on the same scale.
         top = batch;

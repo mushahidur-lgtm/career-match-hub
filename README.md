@@ -96,7 +96,9 @@ git push -u origin main
 
 ### 2. Deploy on Vercel
 
-**One click:** https://vercel.com/new/clone?repository-url=https://github.com/mushahidur-lgtm/career-match-hub&env=ANTHROPIC_API_KEY,ADZUNA_APP_ID,ADZUNA_APP_KEY,RAPIDAPI_KEY
+**One click:** https://vercel.com/new/clone?repository-url=https://github.com/mushahidur-lgtm/career-match-hub
+
+The link deploys with no keys, so the site starts in Demo Mode. Add keys afterwards under Project Settings, Environment Variables, then redeploy.
 
 **Or from the dashboard:**
 
@@ -144,3 +146,5 @@ src/
 - **"No text was found in this PDF."** The PDF is a scan. Export a text-based PDF or paste the text.
 - **Banner says Demo Mode after adding keys.** Restart `npm run dev` so the new environment is loaded. If a live search failed, the results page shows the reason above the list.
 - **"The Anthropic API key was rejected."** Check `ANTHROPIC_API_KEY` for stray spaces or quotes.
+- **Claude requests go somewhere unexpected.** The Anthropic SDK honours an `ANTHROPIC_BASE_URL` environment variable. If one is set in your shell or tooling, requests go there instead of to Anthropic. Unset it to use the default endpoint.
+- **A console warning says the model is deprecated.** That is the SDK noting that `claude-sonnet-4-5` retires on 2026-11-30. Set `ANTHROPIC_MODEL=claude-sonnet-5-5` to move off it.

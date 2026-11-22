@@ -52,7 +52,7 @@ export async function callStructured<S extends z.ZodType>(
   }
 }
 
-async function run<S extends z.ZodType>(model: string, { schema, system, user, maxTokens = 8000 }: StructuredCall<S>) {
+async function run<S extends z.ZodType>(model: string, { schema, system, user, maxTokens = 16000 }: StructuredCall<S>) {
   const message = await getClient().messages.parse({
     model,
     max_tokens: maxTokens,
