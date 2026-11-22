@@ -33,7 +33,7 @@ export function Evidence({ contact }: { contact: Contact }) {
                 <span className="font-semibold uppercase tracking-wide">{s.type}</span>
                 {href ? (
                   <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-brand underline-offset-2 hover:underline">
-                    {host(s.url)} <ExternalLink className="size-3" aria-hidden />
+                    <span className="break-all">{s.url.replace(/^https?:\/\/(?:www\.)?/, "").slice(0, 90)}</span> <ExternalLink className="size-3 shrink-0" aria-hidden />
                     <span className="sr-only">(opens in a new tab)</span>
                   </a>
                 ) : (

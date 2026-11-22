@@ -18,6 +18,9 @@ export interface ContactsApi {
   removeActivity: (id: string, activityId: string) => void;
   linkApp: (id: string, jobId: string, link?: JobLink) => void;
   unlinkApp: (id: string, jobId: string) => void;
+  /** Relates a saved contact to one more job. */
+  linkJob: (id: string, link: JobLink) => void;
+  unlinkJob: (id: string, jobKey: string) => void;
   recordFind: (find: FindRecord) => void;
   openFinder: (job: Job) => void;
   openContact: (id: string) => void;
@@ -48,6 +51,8 @@ export const ContactsContext = createContext<ContactsApi>({
   removeActivity: noop,
   linkApp: noop,
   unlinkApp: noop,
+  linkJob: noop,
+  unlinkJob: noop,
   recordFind: noop,
   openFinder: noop,
   openContact: noop,

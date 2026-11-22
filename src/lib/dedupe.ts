@@ -52,7 +52,8 @@ const MAX_OTHER_LINKS = 3;
 /**
  * Merges listings of the same posting into one. The most complete listing is kept, a stated salary
  * is carried over if the kept one lacks it, and the others' apply links are remembered. Nothing
- * is invented: dates and descriptions stay exactly as the kept listing had them.
+ * is invented: dates stay as the kept listing had them, and a truncated description is replaced only by another
+ * listing's complete one, never combined or rewritten.
  */
 export function mergeDuplicates(jobs: Job[]): Job[] {
   const groups = new Map<string, Job[]>();
@@ -77,8 +78,11 @@ export function mergeDuplicates(jobs: Job[]): Job[] {
     const [winner, ...rest] = sorted;
     const donor = !winner.salary || winner.salary.estimated ? rest.find((j) => j.salary && !j.salary.estimated && yearlySalary(j) !== null) : undefined;
     const urls = [...new Set(rest.map((j) => j.applyUrl).filter((u): u is string => !!u && u !== winner.applyUrl))].slice(0, MAX_OTHER_LINKS);
+    // A board that shares only the start of a posting loses to another that shares the whole text. The text is that listing's own, word for word.
+    const fuller = winner.descriptionTruncated || winner.description.length < 400 ? rest.filter((j) => !j.descriptionTruncated && j.description.length > winner.description.length + 200).sort((a, b) => b.description.length - a.description.length)[0] : undefined;
     return {
       ...winner,
+      ...(fuller ? { description: fuller.description, descriptionTruncated: false } : {}),
       salary: donor ? donor.salary : winner.salary,
       duplicateCount: rest.length,
       ...(urls.length ? { otherApplyUrls: urls } : {}),

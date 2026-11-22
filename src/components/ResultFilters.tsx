@@ -13,6 +13,8 @@ interface Props {
   /** Jobs found by the search, and jobs left after these filters. */
   total: number;
   shown: number;
+  /** How many of the jobs found look likely to be closed, for the one-click toggle. */
+  closedCount?: number;
 }
 
 /** A text box that updates the filters 250ms after you stop typing, so the list does not jump on every key. */
@@ -30,7 +32,7 @@ function DebouncedInput({ id, value, onCommit, ...rest }: { id: string; value: s
   return <input id={id} value={draft} onChange={(e) => setDraft(e.target.value)} className={inputClass} {...rest} />;
 }
 
-export function ResultFilters({ value, onChange, total, shown }: Props) {
+export function ResultFilters({ value, onChange, total, shown, closedCount = 0 }: Props) {
   const uid = useId();
   const active = activeFilterCount(value);
   const [open, setOpen] = useState(active > 0);
@@ -66,6 +68,11 @@ export function ResultFilters({ value, onChange, total, shown }: Props) {
           <span className="text-muted">
             Showing {shown} of {total}
           </span>
+          {(closedCount > 0 || value.hideStale) && (
+            <button type="button" aria-pressed={value.hideStale} className={secondaryButton} onClick={() => set("hideStale", !value.hideStale)}>
+              {value.hideStale ? `Show likely closed again` : `Hide ${closedCount} likely closed`}
+            </button>
+          )}
           {active > 0 && (
             <button type="button" className={secondaryButton} onClick={() => onChange(DEFAULT_REFINE)}>
               Clear filters
@@ -148,7 +155,7 @@ export function ResultFilters({ value, onChange, total, shown }: Props) {
             </label>
             <label className="inline-flex items-center gap-2">
               <input type="checkbox" checked={value.hideStale} onChange={(e) => set("hideStale", e.target.checked)} className="size-4 accent-[var(--brand)]" />
-              Hide postings older than 30 days
+              Hide jobs that are likely closed (older than 30 days, or the posting says it is closed)
             </label>
           </div>
           <p className="text-xs text-muted">Jobs with no posting date are hidden when you pick a posted window, because their age is unknown. A salary only estimated by the job board counts as no stated salary.</p>

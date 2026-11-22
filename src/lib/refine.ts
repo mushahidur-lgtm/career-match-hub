@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { yearlySalary } from "@/lib/format";
 import { freshness, levelBucket, LEVEL_BUCKETS, type LevelBucket } from "@/lib/job-meta";
+import { likelyClosed } from "@/lib/job-quality";
 import { employmentMatches } from "@/lib/providers/common";
 import {
   APPLICATION_STATUSES,
@@ -105,11 +106,12 @@ export function refineJobs(jobs: Job[], f: RefineFilters, ctx: RefineContext): J
     if (f.category !== "All" && job.category !== f.category) return false;
     if (f.seniority !== "All" && levelBucket(job) !== f.seniority) return false;
 
-    if (f.postedWithinDays > 0 || f.hideStale) {
+    if (f.postedWithinDays > 0) {
       const fr = freshness(job.postedAt, now);
-      if (f.postedWithinDays > 0 && (fr.days === null || fr.days > f.postedWithinDays)) return false;
-      if (f.hideStale && fr.level === "stale") return false;
+      if (fr.days === null || fr.days > f.postedWithinDays) return false;
     }
+    // "hideStale" keeps its name so saved filters still load. It now hides every posting that is likely closed.
+    if (f.hideStale && likelyClosed(job, now).closed) return false;
 
     if (!has(job.company, f.company)) return false;
     if (!has(job.title, f.title)) return false;

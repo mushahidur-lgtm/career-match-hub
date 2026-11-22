@@ -145,9 +145,14 @@ export function ContactDialog({ id, onClose }: { id: string; onClose: () => void
           ) : (
             <ul className="space-y-1 text-sm">
               {c.jobs.map((j) => (
-                <li key={j.jobKey}>
-                  <span className="font-medium">{j.jobTitle}</span> at {j.company}
-                  {j.location ? `, ${j.location}` : ""} <span className="text-muted">· {j.relationship}, relevance {j.relevance} of 100</span>
+                <li key={j.jobKey} className="flex flex-wrap items-center gap-2">
+                  <span>
+                    <span className="font-medium">{j.jobTitle}</span> at {j.company}
+                    {j.location ? `, ${j.location}` : ""} <span className="text-muted">· {j.relationship}, relevance {j.relevance} of 100</span>
+                  </span>
+                  <button type="button" className="text-xs font-semibold underline" onClick={() => api.unlinkJob(c.id, j.jobKey)} aria-label={`Stop relating ${c.name} to ${j.jobTitle}`}>
+                    Unlink
+                  </button>
                 </li>
               ))}
             </ul>

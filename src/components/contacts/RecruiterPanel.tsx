@@ -3,13 +3,16 @@
 import { RefreshCw, Search, UserCheck, UserPlus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { contactsFromPosting } from "@/lib/contacts/extract";
-import { searchLinks } from "@/lib/contacts/links";
-import { contactsForJob, findFor, mergeFindings, sameContact } from "@/lib/contacts/model";
+import { diagnoseNoResult } from "@/lib/contacts/diagnostics";
+import { researchLinks, type ResearchGroup } from "@/lib/contacts/links";
+import { contactsForJob, findFor, isSeniorHr, mergeFindings, relevanceFor, sameContact } from "@/lib/contacts/model";
+import { normalizeCompany } from "@/lib/dedupe";
 import { newId } from "@/lib/ids";
 import { jobKey } from "@/lib/backup";
 import type { FindRecruiterResponse, StreamLine } from "@/app/api/find-recruiter/route";
 import type { Contact, FindRecord } from "@/types/contacts";
 import type { Job } from "@/types/job";
+import { JobQualityPanel } from "../job-parts";
 import { Notice, Spinner, primaryButton, secondaryButton } from "../ui";
 import { AddContactDialog } from "./AddContactDialog";
 import { useContacts } from "./context";
@@ -45,6 +48,34 @@ async function readLookup(res: Response, onProgress: (m: string) => void): Promi
   }
   if (!result) throw new Error("The search ended without an answer. Nothing was saved. Try again.");
   return result;
+}
+
+/** Searches the person opens themselves, in their own browser. Nothing here is opened, read or collected automatically. */
+function ResearchLinks({ groups }: { groups: ResearchGroup[] }) {
+  if (!groups.length) return null;
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-medium">Search for them yourself, in your own browser</p>
+      <p className="text-xs text-muted">Each link opens a search on Google, Bing or LinkedIn in a new tab. This app never opens, reads or scrapes those pages. You see the results and decide who to contact.</p>
+      <ul className="grid gap-2 sm:grid-cols-2">
+        {groups.map((g) => (
+          <li key={g.id} className="rounded-lg border border-line p-2.5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">{g.title}</p>
+            <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm">
+              {g.links.map((l) => (
+                <li key={l.href}>
+                  <a href={l.href} target="_blank" rel="noopener noreferrer" title={`Searches for: ${l.query}`} className="text-brand underline-offset-2 hover:underline">
+                    {g.links.length > 3 ? `${l.engine}: ${l.label.replace(/ on (?:Google|Bing|LinkedIn)$/, "")}` : l.engine}
+                    <span className="sr-only"> ({l.label}, opens in a new tab)</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 const union = <T,>(a: T[] | undefined, b: T[] | undefined, max: number) => [...new Set([...(a ?? []), ...(b ?? [])])].slice(0, max);
@@ -140,6 +171,12 @@ export function RecruiterPanel({ job }: { job: Job }) {
   const webDone = Boolean(find?.searched.web);
   const nothing = find !== null && shown.length === 0;
   const canSearch = !isSample && companyKnown;
+  const groups = isSample ? [] : researchLinks(job);
+  const diagnosis = diagnoseNoResult(job, { webSearchRan: webDone });
+  // People already saved at this employer who are not yet linked to this job can be reused instead of added again.
+  const reusable = isSample
+    ? []
+    : api.store.contacts.filter((c) => !c.jobs.some((j) => j.jobKey === key) && normalizeCompany(c.company) === normalizeCompany(job.company));
 
   return (
     <div className="space-y-5">
@@ -150,15 +187,23 @@ export function RecruiterPanel({ job }: { job: Job }) {
       {isSample && <Notice tone="warn">This is a sample job, so it has no real contacts. Search for real jobs to find recruiters.</Notice>}
       {!companyKnown && !isSample && <Notice tone="warn">The posting does not name the employer, so there is no company to look up.</Notice>}
 
-      {canSearch && (
+      {!isSample && <JobQualityPanel job={job} />}
+
+      {canSearch && !api.webSearchAvailable && (
+        <Notice tone="info">
+          Free mode. This lookup reads the names, emails and phone numbers the posting itself prints, and gives you searches to run yourself. Nothing is guessed or built from a name. An AI web search can be added by the site owner, but it is not needed.
+        </Notice>
+      )}
+
+      {canSearch && api.webSearchAvailable && (
         <div className="space-y-3 rounded-xl border border-line p-4">
           <div className="flex flex-wrap items-center gap-3">
-            <button type="button" className={primaryButton} onClick={() => void run("first")} disabled={loading || !api.webSearchAvailable}>
+            <button type="button" className={primaryButton} onClick={() => void run("first")} disabled={loading}>
               {loading ? <Spinner /> : <Search className="size-4" aria-hidden />}
               {webDone ? "Search again" : "Search the web for contacts"}
             </button>
             {webDone && (
-              <button type="button" className={secondaryButton} onClick={() => void run("more")} disabled={loading || !api.webSearchAvailable}>
+              <button type="button" className={secondaryButton} onClick={() => void run("more")} disabled={loading}>
                 Search for more contacts
               </button>
             )}
@@ -169,11 +214,7 @@ export function RecruiterPanel({ job }: { job: Job }) {
             )}
           </div>
           <p className="text-xs text-muted">
-            {api.webSearchAvailable
-              ? "Runs up to 8 searches and reads up to 5 public pages, such as the company's careers and team pages. Each search costs about $0.01 in search fees, and reading pages and writing the answer uses model tokens on top, which can cost more than the searches. Results are kept so this job is not searched again unless you ask."
-              : api.aiAvailable
-                ? "Web lookups are switched off on this site because each one costs money. The site owner can turn them on (RECRUITER_WEB_SEARCH=1, see the README). Until then, only names stated in the posting are shown."
-                : "Web search needs an Anthropic API key on this site (ANTHROPIC_API_KEY). Until then, only names stated in the posting are shown, and the posting text is often too short to name anyone."}
+            Runs up to 8 searches and reads up to 5 public pages, such as the company&apos;s careers and team pages. Each search costs about $0.01 in search fees, and reading pages and writing the answer uses model tokens on top, which can cost more than the searches. Results are kept so this job is not searched again unless you ask.
           </p>
           {loading && (
             <div role="status" aria-live="polite" className="space-y-1 rounded-lg bg-surface-2 p-3 text-sm">
@@ -268,35 +309,43 @@ export function RecruiterPanel({ job }: { job: Job }) {
       {nothing && (
         <div className="space-y-3 rounded-xl border border-dashed border-line p-5">
           <h3 className="font-display text-base font-semibold">No verified contact found</h3>
-          <div className="space-y-2 text-sm text-muted">
-            <p>{webDone ? "Nobody was found whom a source ties to this job at this company. Nothing was guessed." : canSearch ? "Only the posting text has been checked so far. It names no one." : "Nothing could be searched for this job."}</p>
-            {find?.unsupported ? <p>{find.unsupported} {find.unsupported === 1 ? "name was" : "names were"} suggested by the search but left out, because no page backed {find.unsupported === 1 ? "it" : "them"} up.</p> : null}
-            {webDone && find?.queries?.length ? (
-              <div>
-                <p className="font-medium text-ink">What was searched</p>
-                <ul className="list-disc pl-5">
+          <div className="space-y-3 text-sm text-muted">
+            <div>
+              <p className="font-medium text-ink">What was checked</p>
+              <ul className="list-disc pl-5">
+                {diagnosis.checked.map((c) => (
+                  <li key={c}>{c}</li>
+                ))}
+              </ul>
+              {webDone && find?.queries?.length ? (
+                <ul className="mt-1 list-disc pl-5">
                   {find.queries.map((q) => (
-                    <li key={q}>{q}</li>
+                    <li key={q}>Searched: {q}</li>
                   ))}
                 </ul>
-              </div>
-            ) : (
-              <p>Sources checked: the job posting text{webDone ? "" : ". Web search has not been run."}</p>
-            )}
-            {find?.readHosts?.length ? <p>Pages read on: {find.readHosts.join(", ")}.</p> : null}
+              ) : null}
+              {find?.readHosts?.length ? <p className="mt-1">Pages read on: {find.readHosts.join(", ")}.</p> : null}
+            </div>
+            <div>
+              <p className="font-medium text-ink">Why nothing is shown</p>
+              <ul className="list-disc pl-5">
+                {diagnosis.reasons.map((r) => (
+                  <li key={r}>{r}</li>
+                ))}
+                {find?.unsupported ? (
+                  <li>
+                    {find.unsupported} {find.unsupported === 1 ? "name was" : "names were"} suggested by the search but left out, because no page backed {find.unsupported === 1 ? "it" : "them"} up.
+                  </li>
+                ) : null}
+              </ul>
+              <p className="mt-1">Nothing was guessed, and no sample or example contacts are ever shown.</p>
+            </div>
+            <p className="rounded-lg bg-surface-2 p-3 text-ink">
+              <span className="font-semibold">Next: </span>
+              {diagnosis.next}
+            </p>
           </div>
-          <div>
-            <p className="text-sm font-medium">Look yourself, in your own browser</p>
-            <ul className="mt-1 space-y-1 text-sm">
-              {searchLinks(job.company, job.title).map((l) => (
-                <li key={l.href}>
-                  <a href={l.href} target="_blank" rel="noopener noreferrer" className="text-brand underline-offset-2 hover:underline">
-                    {l.label}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <ResearchLinks groups={groups} />
           <div className="flex flex-wrap gap-2">
             {canSearch && api.webSearchAvailable && (
               <button type="button" className={secondaryButton} onClick={() => void run("first")} disabled={loading}>
@@ -311,9 +360,53 @@ export function RecruiterPanel({ job }: { job: Job }) {
       )}
 
       {!nothing && (
-        <button type="button" className="text-sm font-semibold text-brand underline-offset-2 hover:underline" onClick={() => setAdding(true)}>
-          Add a contact I found myself
-        </button>
+        <div className="space-y-3">
+          {groups.length > 0 && (
+            <details className="rounded-lg border border-line p-3">
+              <summary className="cursor-pointer text-sm font-medium">Search for more people yourself</summary>
+              <div className="mt-3">
+                <ResearchLinks groups={groups} />
+              </div>
+            </details>
+          )}
+          <button type="button" className="text-sm font-semibold text-brand underline-offset-2 hover:underline" onClick={() => setAdding(true)}>
+            Add a contact I found myself
+          </button>
+        </div>
+      )}
+
+      {reusable.length > 0 && (
+        <section aria-label="Contacts you already saved at this employer" className="space-y-2 rounded-xl border border-line p-4">
+          <h3 className="text-sm font-semibold">Already saved at {job.company}</h3>
+          <p className="text-xs text-muted">Use someone you saved for another job here too. Their notes, status and history stay as they are.</p>
+          <ul className="space-y-2">
+            {reusable.slice(0, 6).map((c) => (
+              <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span>
+                  <span className="font-medium">{c.name}</span>
+                  <span className="text-muted"> · {c.title || "Title not confirmed"}</span>
+                </span>
+                <button
+                  type="button"
+                  className={secondaryButton}
+                  onClick={() =>
+                    api.linkJob(c.id, {
+                      jobKey: key,
+                      jobTitle: job.title,
+                      company: job.company,
+                      location: job.location,
+                      relationship: c.type,
+                      jobSpecific: false,
+                      relevance: relevanceFor({ type: c.type, title: c.title, department: c.department, jobTitle: job.title, jobSpecific: false, senior: isSeniorHr(c.title) }),
+                    })
+                  }
+                >
+                  Also use for this job
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {adding && (

@@ -4,7 +4,8 @@ import { useState, type FormEvent } from "react";
 import { jobKey } from "@/lib/backup";
 import { webLink } from "@/lib/contacts/links";
 import { classifyType, isLinkedInProfile, isSeniorHr, newContact, newSource, relevanceFor } from "@/lib/contacts/model";
-import { CONTACT_LIMITS as L } from "@/types/contacts";
+import { plausibleDay, todayLocal } from "@/lib/applications";
+import { CONTACT_LIMITS as L, NETWORK_STAGES, type NetworkStage } from "@/types/contacts";
 import type { Job } from "@/types/job";
 import { Notice, inputClass, primaryButton, secondaryButton } from "../ui";
 import { useContacts } from "./context";
@@ -13,9 +14,10 @@ import { Modal } from "./RecruiterDialog";
 /** For someone you found yourself, for example on LinkedIn or from a referral. Always recorded as added by you. */
 export function AddContactDialog({ jobs, initialCompany = "", onDone, onClose }: { jobs: Job[]; initialCompany?: string; onDone: (id: string) => void; onClose: () => void }) {
   const api = useContacts();
-  const [f, setF] = useState({ name: "", title: "", company: initialCompany, department: "", linkedin: "", email: "", phone: "", where: "", sourceUrl: "", job: "" });
+  const [f, setF] = useState({ name: "", title: "", company: initialCompany, department: "", linkedin: "", email: "", phone: "", where: "", sourceUrl: "", job: jobs.length === 1 ? jobs[0].id : "", stage: "Discovered" as NetworkStage, followUp: "", notes: "" });
   const [error, setError] = useState<string | null>(null);
   const set = (k: keyof typeof f, v: string) => setF((x) => ({ ...x, [k]: v }));
+  const today = todayLocal();
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -43,6 +45,9 @@ export function AddContactDialog({ jobs, initialCompany = "", onDone, onClose }:
       status: "Possible match",
       confidence: 0,
       origin: "manual",
+      stage: f.stage,
+      nextFollowUp: f.followUp && plausibleDay(f.followUp) ? f.followUp : null,
+      notes: f.notes.trim().slice(0, L.notes),
       sources: [newSource({ url: webLink(url) ?? "manual", type: "manual", evidence: f.where.trim() })],
       jobs: job ? [{ jobKey: jobKey(job), jobTitle: job.title, company: job.company, location: job.location, relationship: type, relevance: relevanceFor({ type, title: f.title, department: f.department, jobTitle: job.title, jobSpecific: false, senior: isSeniorHr(f.title) }) }] : [],
     });
@@ -76,6 +81,24 @@ export function AddContactDialog({ jobs, initialCompany = "", onDone, onClose }:
         <div className="flex flex-col gap-1.5 text-sm font-medium">
           <label htmlFor="add-where">Where did you find them?</label>
           <input id="add-where" className={inputClass} maxLength={L.evidence} value={f.where} onChange={(e) => set("where", e.target.value)} placeholder="For example: listed as the recruiter on the company careers page" required />
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5 text-sm font-medium">
+            <label htmlFor="add-stage">Networking status</label>
+            <select id="add-stage" className={inputClass} value={f.stage} onChange={(e) => set("stage", e.target.value)}>
+              {NETWORK_STAGES.map((s) => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1.5 text-sm font-medium">
+            <label htmlFor="add-follow">Next follow-up date</label>
+            <input id="add-follow" type="date" min={today} className={inputClass} value={f.followUp} onChange={(e) => set("followUp", e.target.value)} />
+          </div>
+        </div>
+        <div className="flex flex-col gap-1.5 text-sm font-medium">
+          <label htmlFor="add-notes">Notes</label>
+          <textarea id="add-notes" rows={2} className={`${inputClass} resize-y`} maxLength={L.notes} value={f.notes} onChange={(e) => set("notes", e.target.value)} />
         </div>
         {jobs.length > 0 && (
           <div className="flex flex-col gap-1.5 text-sm font-medium">

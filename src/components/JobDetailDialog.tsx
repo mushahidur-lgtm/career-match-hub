@@ -12,7 +12,7 @@ import { adviseResume, buildPrepSummary, type ResumeAdvice } from "@/lib/resume-
 import type { ApiError, Job, ResumeVersion, SavedJob } from "@/types/job";
 import { MatchBreakdown } from "./MatchBreakdown";
 import { useContacts } from "./contacts/context";
-import { ConfidenceBadge, FreshnessBadge, SaveControl, modeTone, safeUrl, typeLabel, typeTone, type JobActions } from "./job-parts";
+import { ConfidenceBadge, FreshnessBadge, JobQualityPanel, SaveControl, modeTone, safeUrl, typeLabel, typeTone, type JobActions } from "./job-parts";
 import { Badge, Notice, ScoreBadge, Spinner, inputClass, primaryButton, secondaryButton } from "./ui";
 
 export type DetailTab = "overview" | "description" | "match" | "resume" | "application";
@@ -215,6 +215,8 @@ function OverviewTab({ job }: { job: Job }) {
 
       {fr.note && <Notice tone="warn">{fr.note}</Notice>}
 
+      <JobQualityPanel job={job} />
+
       {job.match && <p className="max-w-prose text-sm leading-relaxed">{job.match.matchReason}</p>}
 
       <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -285,7 +287,7 @@ function DescriptionTab({ job }: { job: Job }) {
       <section aria-label="Description">
         <h3 className="font-display text-base font-semibold">Description</h3>
         <div className="mt-2 max-w-prose whitespace-pre-line text-sm leading-relaxed">{job.description || "No description was provided."}</div>
-        {job.descriptionTruncated && <p className="mt-3 text-xs text-muted">The job board shares only the start of this posting. Open the full posting to read the rest.</p>}
+        {job.descriptionTruncated && <p className="mt-3 text-xs text-muted">The job board shares only the start of this posting ({job.description.length.toLocaleString()} characters). Skills and requirements further down are not counted. See Listing quality on the Overview tab for a link to the full posting.</p>}
       </section>
     </div>
   );

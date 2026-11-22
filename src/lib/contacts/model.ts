@@ -52,7 +52,18 @@ export function contactKey(c: Pick<Contact, "name" | "company" | "linkedinUrl">)
   return h ? `li:${h}` : `n:${normName(c.name)}|${normalizeCompany(c.company)}`;
 }
 
-export const sameContact = (a: Pick<Contact, "name" | "company" | "linkedinUrl">, b: Pick<Contact, "name" | "company" | "linkedinUrl">) => contactKey(a) === contactKey(b);
+/**
+ * The same person: two profile addresses decide it when both have one (same handle is the same person, different handles are
+ * two people). When either has none, the exact normalized name at the same employer decides, so a contact saved with a
+ * profile link and the same person found later without one are one entry, not two.
+ */
+export function sameContact(a: Pick<Contact, "name" | "company" | "linkedinUrl">, b: Pick<Contact, "name" | "company" | "linkedinUrl">): boolean {
+  const ha = linkedinHandle(a.linkedinUrl);
+  const hb = linkedinHandle(b.linkedinUrl);
+  if (ha && hb) return ha === hb;
+  const na = normName(a.name);
+  return na.length > 0 && na === normName(b.name) && normalizeCompany(a.company) === normalizeCompany(b.company);
+}
 
 /**
  * People who might be the same but are not certain to be: the same surname and first initial at the same employer.
@@ -308,7 +319,21 @@ export function linkApplication(store: ContactsStore, id: string, jobId: string,
   };
 }
 
-export const unlinkApplication = (store: ContactsStore, id: string, jobId: string): ContactsStore => ({
+/** Relates a saved contact to one more job, so one person can be reused across jobs at the same employer. Nothing else about them changes. */
+export function linkJob(store: ContactsStore, id: string, link: JobLink, now = new Date()): ContactsStore {
+  return {
+    ...store,
+    contacts: store.contacts.map((c) => (c.id === id && !c.jobs.some((j) => j.jobKey === link.jobKey) ? clampContact({ ...c, jobs: [link, ...c.jobs], updatedAt: now.toISOString() }) : c)),
+  };
+}
+
+/** Removes the link to one job. The person, their notes and their history stay. */
+export const unlinkJob = (store: ContactsStore, id: string, jobKey: string, now = new Date()): ContactsStore => ({
+  ...store,
+  contacts: store.contacts.map((c) => (c.id === id ? { ...c, jobs: c.jobs.filter((j) => j.jobKey !== jobKey), updatedAt: now.toISOString() } : c)),
+});
+
+export const unlinkApplication =(store: ContactsStore, id: string, jobId: string): ContactsStore => ({
   ...store,
   contacts: store.contacts.map((c) => (c.id === id ? { ...c, applicationJobIds: c.applicationJobIds.filter((j) => j !== jobId) } : c)),
 });

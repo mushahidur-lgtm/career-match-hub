@@ -10,7 +10,7 @@ vi.mock("@/lib/cloud/auth", () => ({ requireSignedIn: auth.requireSignedIn }));
 
 import { POST } from "@/app/api/networking-draft/route";
 import { CONNECTION_NOTE_LIMIT, YOUR_NAME, buildDraft, draftIsSafe, sharedSkills, suggestApproach } from "@/lib/contacts/drafts";
-import { googleSearch, linkedinPeopleSearch, mailtoLink, searchLinks, webLink } from "@/lib/contacts/links";
+import { googleSearch, linkedinPeopleSearch, mailtoLink, researchLinks, webLink } from "@/lib/contacts/links";
 import { logActivity, newActivity, newContact, saveContact } from "@/lib/contacts/model";
 import { EMPTY_CONTACTS, type Contact, type ContactsStore } from "@/types/contacts";
 import type { CandidateProfile } from "@/types/job";
@@ -141,7 +141,7 @@ describe("links open in the person's own browser", () => {
   it("builds searches and an email link, and refuses anything but web links", () => {
     expect(linkedinPeopleSearch("Acme Inc")).toBe("https://www.linkedin.com/search/results/people/?keywords=recruiter%20Acme%20Inc");
     expect(googleSearch("a b")).toBe("https://www.google.com/search?q=a%20b");
-    expect(searchLinks("Acme", "Data Engineer")).toHaveLength(3);
+    expect(researchLinks({ company: "Acme", title: "Data Engineer" }).length).toBeGreaterThanOrEqual(4);
     expect(mailtoLink("jane@acme.example", "Hi there", "Line 1\nLine 2")).toBe("mailto:jane%40acme.example?subject=Hi%20there&body=Line%201%0ALine%202");
     expect(webLink("javascript:alert(1)")).toBeNull();
     expect(webLink("https://example.com/x")).toBe("https://example.com/x");

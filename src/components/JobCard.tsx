@@ -6,10 +6,8 @@ import { formatSalary } from "@/lib/format";
 import type { Job, SavedJob } from "@/types/job";
 import { useContacts } from "./contacts/context";
 import { JobDetailDialog, type DetailTab } from "./JobDetailDialog";
-import { ConfidenceBadge, FreshnessBadge, SaveControl, modeTone, safeUrl, typeLabel, typeTone, type JobActions } from "./job-parts";
+import { ConfidenceBadge, FreshnessBadge, JobQualityLine, SaveControl, modeTone, safeUrl, typeLabel, typeTone, type JobActions } from "./job-parts";
 import { Badge, ScoreBadge, secondaryButton } from "./ui";
-
-const SOURCE_NAME = { adzuna: "Adzuna", jsearch: "JSearch", demo: "sample data", manual: "you" } as const;
 
 interface Props extends JobActions {
   job: Job;
@@ -57,10 +55,7 @@ export function JobCard({ job, saved, onSave, onStatus, onRemove }: Props) {
 
       {job.match && <p className="mt-3 line-clamp-3 max-w-prose text-sm text-muted">{job.match.matchReason}</p>}
 
-      <p className="mt-2 text-xs text-muted">
-        {job.source === "manual" ? "Added by you" : `via ${SOURCE_NAME[job.source]}`}
-        {job.duplicateCount ? ` · also listed ${job.duplicateCount} more ${job.duplicateCount === 1 ? "time" : "times"}` : ""}
-      </p>
+      <JobQualityLine job={job} />
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button type="button" className={secondaryButton} onClick={() => setOpen("overview")} aria-haspopup="dialog">

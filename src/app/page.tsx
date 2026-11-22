@@ -40,11 +40,12 @@ import { EMPTY_INTEL, clearHistory, clearSeen, mergeIntel, recordSearch, removeS
 import { readIntel, stashIntel } from "@/lib/history-load";
 import { computeOverview } from "@/lib/overview";
 import { addSavedJob, findSaved, removeSavedJob, setSavedNotes, setSavedStatus, updateSavedJob } from "@/lib/saved";
+import { likelyClosed } from "@/lib/job-quality";
 import { DEFAULT_REFINE, RefineSchema, refineJobs, type RefineFilters } from "@/lib/refine";
 import { FiltersSchema, PreferencesSchema, ResumeVersionsSchema } from "@/lib/schemas";
 import { fillStructure, lacksStructure } from "@/lib/resume-sections";
 import { nameFromFile } from "@/lib/storage";
-import { deleteContact, linkApplication, logActivity, markVerified, mergeContactStores, recordFind, removeActivity, saveContact, unlinkApplication, updateContact } from "@/lib/contacts/model";
+import { deleteContact, linkApplication, linkJob, logActivity, markVerified, mergeContactStores, recordFind, removeActivity, saveContact, unlinkApplication, unlinkJob, updateContact } from "@/lib/contacts/model";
 import { readContacts, stashContacts } from "@/lib/contacts/schema";
 import { retryFailedSaves, useUnsavedKeys } from "@/lib/storage-health";
 import { addSite, markChecked, mergeWatchlists, removeSite, updateSite } from "@/lib/watchlist/model";
@@ -185,6 +186,7 @@ export default function Home() {
   const statusOf = useCallback((job: Job) => savedByKey.get(jobKey(job))?.status ?? null, [savedByKey]);
   const refined = useMemo(() => (results ? refineJobs(results.jobs, refine, { statusOf }) : []), [results, refine, statusOf]);
   const sorted = useMemo(() => sortJobs(refined, sort), [refined, sort]);
+  const closedCount = useMemo(() => (results ? results.jobs.filter((j) => likelyClosed(j).closed).length : 0), [results]);
 
   // Pagination. The page size resets whenever the search, the filters or the sort change.
   const PAGE_SIZE = 15;
@@ -333,6 +335,8 @@ export default function Home() {
       removeActivity: (id, aid) => apply((s) => removeActivity(s, id, aid)),
       linkApp: (id, jobId, link) => apply((s) => linkApplication(s, id, jobId, link)),
       unlinkApp: (id, jobId) => apply((s) => unlinkApplication(s, id, jobId)),
+      linkJob: (id, link) => apply((s) => linkJob(s, id, link)),
+      unlinkJob: (id, key) => apply((s) => unlinkJob(s, id, key)),
       recordFind: (f) => apply((s) => recordFind(s, f)),
       openFinder: setFinderJob,
       openContact: setContactId,
@@ -527,7 +531,7 @@ export default function Home() {
                     </button>
                   </Notice>
                 )}
-                {results.jobs.length > 0 && <ResultFilters value={refine} onChange={setRefine} total={results.jobs.length} shown={sorted.length} />}
+                {results.jobs.length > 0 && <ResultFilters value={refine} onChange={setRefine} total={results.jobs.length} shown={sorted.length} closedCount={closedCount} />}
                 {sorted.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-line px-6 py-12">
                     {results.jobs.length > 0 ? (
