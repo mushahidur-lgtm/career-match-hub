@@ -37,6 +37,7 @@ import { DEFAULT_REFINE, RefineSchema, refineJobs, type RefineFilters } from "@/
 import { FiltersSchema, PreferencesSchema, ResumeVersionsSchema } from "@/lib/schemas";
 import { fillStructure, lacksStructure } from "@/lib/resume-sections";
 import { nameFromFile } from "@/lib/storage";
+import { useUnsavedKeys } from "@/lib/storage-health";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import {
   DEFAULT_FILTERS,
@@ -103,6 +104,7 @@ export default function Home() {
   }, shrinkIntel);
   const [sort, setSort] = usePersistentState<SortKey>("cmh:sort", "score");
   const [refine, setRefine] = usePersistentState<RefineFilters>("cmh:refine", DEFAULT_REFINE, check(RefineSchema));
+  const unsaved = useUnsavedKeys();
   const recovered = resumesLost || savedLost || skipped > 0 || intelSkipped > 0 || intelLost;
 
   const [status, setStatus] = useState<AppStatus | null>(null);
@@ -150,7 +152,7 @@ export default function Home() {
   const showMore = () => setPager({ key: pageKey, count: shownCount + PAGE_SIZE });
 
   const exportResults = () => {
-    const blob = new Blob([jobsToCsv(sorted, statusOf)], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob(["﻿", jobsToCsv(sorted, statusOf)], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -203,7 +205,7 @@ export default function Home() {
   const openApplication = (id: string, tab: ApplicationTab = "details") => setOpenApp({ id, tab });
   const reminders = useMemo(() => computeReminders(saved), [saved]);
   const exportApplications = () => {
-    const blob = new Blob([applicationsToCsv(saved)], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob(["﻿", applicationsToCsv(saved)], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -287,6 +289,15 @@ export default function Home() {
   return (
     <DetailContext.Provider value={detailContext}>
     <AppShell tab={tab} onTab={setTab} counts={{ applications: saved.length, interviews: saved.reduce((n, a) => n + (a.interviews ?? []).filter((i) => i.status === "Scheduled").length, 0) }} status={<StatusBanner status={status} results={results} />}>
+      {unsaved.length > 0 && (
+        <Notice tone="error">
+          Your browser has no room left, so recent changes are <strong>not being saved</strong> and would be lost if you closed this page. Export a backup now, then free space by deleting upgrade copies in Settings or old search history.{" "}
+          <button type="button" className="font-semibold underline" onClick={() => setTab("settings")}>
+            Open Settings
+          </button>
+        </Notice>
+      )}
+
       {recovered && (
         <Notice tone="warn">
           Some saved data could not be read, so it was set aside instead of deleted.{" "}

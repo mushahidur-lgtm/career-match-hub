@@ -85,7 +85,7 @@ export function CareerIntelligence({ intel, applications, skills, roles, hasResu
           </section>
 
           {data.jobs > 0 && (
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <ChartFrame
                 title="New jobs found per day"
                 subtitle={`${OBSERVED} Counts the day each job first appeared in one of your searches, so the first search shows everything it returned.`}
@@ -171,7 +171,7 @@ export function CareerIntelligence({ intel, applications, skills, roles, hasResu
             {applications.length === 0 ? (
               <p className="text-sm text-muted">No applications tracked yet.</p>
             ) : (
-              <div className="grid gap-4 lg:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <ChartFrame title="Applications by status" subtitle="Observed: your own tracker." table={{ head: ["Status", "Applications"], rows: data.applicationsByStatus.map((s) => [s.label, s.value]) }}>
                   <BarList rows={data.applicationsByStatus.filter((s) => s.value > 0)} />
                 </ChartFrame>
@@ -230,7 +230,7 @@ export function CareerIntelligence({ intel, applications, skills, roles, hasResu
                 {ranked.length > 1 && (
                   <div className="rounded-xl border border-line bg-surface p-4 sm:p-5">
                     <h3 className="font-display text-base font-semibold">Compare two roles</h3>
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <RolePicker id="cmp-a" label="First role" value={left?.role ?? ""} options={ranked} onChange={setA} />
                       <RolePicker id="cmp-b" label="Second role" value={right?.role ?? ""} options={ranked} onChange={setB} />
                     </div>

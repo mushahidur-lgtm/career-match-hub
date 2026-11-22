@@ -41,7 +41,7 @@ export function SearchFilters({ filters, onChange, onSearch, loading, suggestion
 
   return (
     <form onSubmit={submit} className="rounded-xl border border-line bg-surface p-4 sm:p-5" aria-label="Job search">
-      <div className="grid gap-4 md:grid-cols-[1.6fr_1fr_1fr]">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[1.6fr_1fr_1fr]">
         <div className={field}>
           <label htmlFor={`${uid}-query`}>Job title or keywords</label>
           <input
@@ -88,7 +88,7 @@ export function SearchFilters({ filters, onChange, onSearch, loading, suggestion
         </div>
       </div>
 
-      <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className={field}>
           <label htmlFor={`${uid}-category`}>Job category</label>
           <select id={`${uid}-category`} value={filters.category} onChange={(e) => set("category", e.target.value as JobCategoryFilter)} className={inputClass}>

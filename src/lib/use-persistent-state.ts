@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { migrateStorage, stashUnreadable } from "./storage";
+import { markFailed, markSaved } from "./storage-health";
 
 let migrationRan = false;
 
@@ -56,11 +57,14 @@ export function usePersistentState<T>(key: string, initial: T, validate?: (value
     if (!hydrated) return;
     try {
       window.localStorage.setItem(key, JSON.stringify(value));
+      markSaved(key);
     } catch {
       /* Storage full or blocked. Data that can be given up in part (search history) is cut down so it never crowds out what cannot. */
       const smaller = shrink?.(value);
       // eslint-disable-next-line react-hooks/set-state-in-effect
       if (smaller) setValue(smaller);
+      // Nothing more can be given up: this change is not being saved, and the app says so.
+      else markFailed(key);
     }
   }, [key, value, hydrated, shrink]);
 

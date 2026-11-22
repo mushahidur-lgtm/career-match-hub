@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { buildBackup, parseBackup, type AppData } from "@/lib/backup";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import type { IntelStore } from "@/types/job";
-import { getCloud } from "./client";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { isCloudConfigured } from "./config";
 import { readDailyPayload, replayRun, type DailyPayload } from "./daily-payload";
 import { deleteCloud, fetchRow, fetchRuns, pushRow } from "./remote";
@@ -72,7 +72,16 @@ function readRow(data: unknown): { ok: true; data: AppData } | { ok: false; erro
  */
 export function useCloud({ data, apply, updateIntel, intel }: Options): CloudApi {
   const configured = isCloudConfigured();
-  const sb = useMemo(() => getCloud(), []);
+  // The Supabase library is loaded only when cloud features are configured, so a browser-only setup never downloads it.
+  const [sb, setSb] = useState<SupabaseClient | null>(null);
+  useEffect(() => {
+    if (!configured) return;
+    let live = true;
+    void import("./client").then((m) => live && setSb(m.getCloud()));
+    return () => {
+      live = false;
+    };
+  }, [configured]);
   const [memory, setMemory, hydrated] = usePersistentState<SyncMemory>("cmh:cloud", NO_SYNC, (v) => {
     const r = MemorySchema.safeParse(v);
     return r.success ? r.data : undefined;

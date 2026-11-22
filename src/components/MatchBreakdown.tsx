@@ -101,7 +101,7 @@ export function MatchBreakdown({ match }: { match: MatchResult }) {
         <Group title="Preferred skills you lack" items={d.preferredMissing} tone="neutral" />
       </section>
 
-      <section aria-label="Fit" className="grid gap-3 sm:grid-cols-3">
+      <section aria-label="Fit" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {[
           { title: "Seniority", label: statusLabel.seniority[d.seniority.status], note: d.seniority.note },
           { title: "Location", label: statusLabel.location[d.location.status], note: d.location.note },

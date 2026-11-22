@@ -100,7 +100,7 @@ export function InterviewEditor({ app, interview: iv, resume, aiAvailable, onCha
 
   return (
     <div className="space-y-4 rounded-xl border border-line p-4">
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Date and time" id={`${base}-at`}>
           <input id={`${base}-at`} type="datetime-local" value={iv.at ?? ""} onChange={(e) => onChange({ at: e.target.value || null })} className={inputClass} />
         </Field>
@@ -130,7 +130,7 @@ export function InterviewEditor({ app, interview: iv, resume, aiAvailable, onCha
         <input id={`${base}-who`} value={iv.interviewers} maxLength={500} onChange={(e) => onChange({ interviewers: e.target.value })} placeholder="Names and titles" className={inputClass} />
       </Field>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <LinesField id={`${base}-topics`} label="Technical topics to review" help={`One per line, up to ${LIMITS.topicsMax}.`} value={iv.topicsToReview} maxItems={LIMITS.topicsMax} maxLength={LIMITS.topic} onCommit={(v) => onChange({ topicsToReview: v })} />
         <LinesField id={`${base}-asks`} label="Questions to ask" help={`One per line, up to ${LIMITS.questionsMax}.`} value={iv.questionsToAsk} maxItems={LIMITS.questionsMax} maxLength={LIMITS.question} onCommit={(v) => onChange({ questionsToAsk: v })} />
       </div>

@@ -212,7 +212,7 @@ function OverviewTab({ job }: { job: Job }) {
 
       {job.match && <p className="max-w-prose text-sm leading-relaxed">{job.match.matchReason}</p>}
 
-      <dl className="grid gap-4 sm:grid-cols-3">
+      <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Fact label="Company">{job.company}</Fact>
         <Fact label="Location">{job.location}</Fact>
         <Fact label="Work arrangement">{job.workMode}</Fact>
@@ -224,7 +224,7 @@ function OverviewTab({ job }: { job: Job }) {
       </dl>
 
       {d && (
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {[
             { title: "Seniority", text: d.seniority.note },
             { title: "Location", text: d.location.note },

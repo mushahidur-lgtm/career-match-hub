@@ -125,7 +125,8 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport, ac
   }
 
   return (
-    <div className="grid gap-8 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+      <h1 className="sr-only">Settings</h1>
       <form onSubmit={save} className="space-y-4" aria-labelledby="prefs-heading">
         <div>
           <h2 id="prefs-heading" className="font-display text-xl font-semibold">
@@ -146,7 +147,7 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport, ac
         <fieldset className="space-y-3">
           <legend className="text-sm font-medium">How much each part of a match counts</legend>
           <p className="text-xs text-muted">Set any numbers you like. They are scaled to 100% when you save. A part the posting gives no information about is skipped and the rest share its weight.</p>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {MATCH_COMPONENTS.map((k) => (
               <div key={k} className="flex flex-col gap-1 text-sm">
                 <label htmlFor={`w-${k}`}>{MATCH_COMPONENT_LABELS[k]}</label>

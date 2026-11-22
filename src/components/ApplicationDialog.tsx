@@ -144,7 +144,7 @@ export function ApplicationDialog({ app, initialTab = "details", onUpdate, onMov
         {tab === "details" && (
           <div className="space-y-8">
             <Section title="Dates" help="These drive your reminders. Applying sets the date and a follow-up a week later, and you can change both.">
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field label="Applied on" id={`${id}-applied`}>
                   <input id={`${id}-applied`} type="date" value={app.appliedAt ?? ""} onChange={(e) => update({ appliedAt: e.target.value || null })} className={inputClass} />
                 </Field>
@@ -188,7 +188,7 @@ export function ApplicationDialog({ app, initialTab = "details", onUpdate, onMov
             </Section>
 
             <Section title="Recruiter" help="Who you are dealing with.">
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 {(["name", "email", "phone"] as const).map((k) => (
                   <Field key={k} label={k === "name" ? "Name" : k === "email" ? "Email" : "Phone"} id={`${id}-rec-${k}`}>
                     <input
@@ -205,7 +205,7 @@ export function ApplicationDialog({ app, initialTab = "details", onUpdate, onMov
             </Section>
 
             <Section title="Pay">
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field label="Posted salary" id={`${id}-posted-pay`}>
                   <input id={`${id}-posted-pay`} value={formatSalary(app.job.salary)} readOnly className={`${inputClass} text-muted`} />
                 </Field>
@@ -218,7 +218,7 @@ export function ApplicationDialog({ app, initialTab = "details", onUpdate, onMov
             {(app.status === "Offer" || app.offer) && (
               <Section title="Offer" help="Record what you were offered and when you must answer.">
                 {app.offer ? (
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     {(["salary", "bonus"] as const).map((k) => (
                       <Field key={k} label={k === "salary" ? "Salary offered" : "Bonus"} id={`${id}-offer-${k}`}>
                         <input id={`${id}-offer-${k}`} value={app.offer![k]} maxLength={200} onChange={(e) => update({ offer: { ...app.offer!, [k]: e.target.value } })} className={inputClass} />

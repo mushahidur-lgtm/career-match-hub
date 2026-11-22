@@ -60,7 +60,8 @@ export function ResumeManager(props: Props) {
   const showAdd = adding || versions.length === 0;
 
   return (
-    <div className="grid gap-8 xl:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
+    <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
+      <h1 className="sr-only">Resume and profile</h1>
       <section aria-labelledby="resume-heading" className="space-y-4">
         <div>
           <h2 id="resume-heading" className="font-display text-xl font-semibold">
@@ -372,7 +373,7 @@ function ProfilePanel({
         </div>
         <p className="mt-3 max-w-prose text-sm leading-relaxed">{profile.summary}</p>
 
-        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="flex flex-col gap-1.5 text-sm font-medium">
             <label htmlFor="years">Years of experience</label>
             <input
@@ -484,7 +485,7 @@ function WorkHistoryEditor({ history, onChange }: { history: WorkEntry[]; onChan
       <ul className="mt-4 space-y-4">
         {history.map((h, i) => (
           <li key={i} className="rounded-lg border border-line p-3">
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Job title" id={`wh-title-${i}`}>
                 <input id={`wh-title-${i}`} value={h.title} maxLength={200} onChange={(e) => update(i, { title: e.target.value })} className={inputClass} />
               </Field>

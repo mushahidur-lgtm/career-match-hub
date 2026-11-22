@@ -49,7 +49,7 @@ export function Overview({ stats, resumeName, provider, hasSearched, onOpenJob, 
         <Kpi label="Follow-ups due" value={stats.followUpsDue} tone={stats.followUpsDue > 0 ? "warn" : undefined} />
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <ReminderPanel
           title="Upcoming interviews"
           empty="No interviews in the next week. Add one from an application's Interviews tab."
@@ -64,7 +64,7 @@ export function Overview({ stats, resumeName, provider, hasSearched, onOpenJob, 
         />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Panel title="Best matching opportunities" empty="Run a search to see your best matches." items={stats.best} onOpenJob={onOpenJob} action={{ label: "Open Discover", onClick: () => onGo("discover") }}>
           {(o) => <ScoreCell o={o} />}
         </Panel>
@@ -161,7 +161,7 @@ function Panel({
 }) {
   const id = `panel-${title.replace(/\W+/g, "-").toLowerCase()}`;
   return (
-    <section aria-labelledby={id} className="rounded-xl border border-line bg-surface p-5">
+    <section aria-labelledby={id} className="min-w-0 rounded-xl border border-line bg-surface p-5">
       <h2 id={id} className="font-display text-base font-semibold">
         {title}
       </h2>
@@ -253,7 +253,7 @@ function GetStarted({ hasResume, sourceConnected, sampleOnly, hasSearched, onGo 
 function ReminderPanel({ title, empty, reminders, onOpen }: { title: string; empty: string; reminders: Reminder[]; onOpen: (r: Reminder) => void }) {
   const id = `rem-${title.replace(/\W+/g, "-").toLowerCase()}`;
   return (
-    <section aria-labelledby={id} className="rounded-xl border border-line bg-surface p-5">
+    <section aria-labelledby={id} className="min-w-0 rounded-xl border border-line bg-surface p-5">
       <h2 id={id} className="font-display text-base font-semibold">
         {title}
       </h2>
