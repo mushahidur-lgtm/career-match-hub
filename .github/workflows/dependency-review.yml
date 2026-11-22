@@ -1,0 +1,23 @@
+name: Dependency review
+
+# Blocks a pull request that adds a dependency with a known high or critical vulnerability. It needs the repository's
+# dependency graph to be enabled (Settings > Advanced Security), which is on by default for public repositories.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    name: Review changed dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high

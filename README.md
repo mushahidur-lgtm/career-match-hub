@@ -21,9 +21,57 @@ Upload your resume, see which jobs fit your skills, and track every application 
 
 Built with Next.js 16 (App Router), TypeScript, Tailwind CSS 4 and the Anthropic SDK.
 
+## Architecture overview
+
+```
+Browser (Next.js client)                          Server (Next.js route handlers, stateless)
+  your data: localStorage  ─────────────────▶  /api/search-jobs      ─▶ Adzuna or JSearch   (only if a job-board key is set)
+  (resumes, applications, contacts, history)   /api/analyze-resume,
+                                                /api/job-insights,
+                                                /api/interview-prep   ─▶ Anthropic           (only if ANTHROPIC_API_KEY is set)
+                                                /api/find-recruiter   ─▶ Anthropic web search (only if a key AND RECRUITER_WEB_SEARCH=1 or sign-in is required)
+                                                /api/status            (reports which features are on; never key values)
+  optional: Supabase sign-in + synced copy ◀──▶ /api/cron/daily        ◀─ GitHub Actions at 8:00 AM Toronto (needs CRON_SECRET)
+```
+
+- **The browser owns your data.** Resumes, applications, contacts, history and settings live in `localStorage`. The server keeps no database and no session of its own.
+- **The server is a thin, stateless layer.** Each route reads its keys from environment variables, calls one outside service when asked, and returns the result. Without a key the route says so instead of inventing data.
+- **Everything optional is off by default.** The sections below show what each setting turns on.
+
+## Modes: what each configuration turns on
+
+| Mode | Settings | What works | What does not |
+| --- | --- | --- | --- |
+| **Local-only (no keys)** | none | Resume profile (keyword engine), match scoring (keyword engine), applications and interviews tracker, career-site watchlist, Find Recruiter in free mode (names, emails and phones the posting prints, plus Google, Bing and LinkedIn search links you open yourself), contacts and networking tracker, backup and import | Live jobs (production shows none and says so; `npm run dev` shows labelled sample jobs), Claude features, cloud sync |
+| **Job source** | `ADZUNA_APP_ID` and `ADZUNA_APP_KEY`, or `RAPIDAPI_KEY` | Live job search. Calls go from the server to the job board | Claude features, cloud sync |
+| **Optional Claude** | `ANTHROPIC_API_KEY` (optionally `ANTHROPIC_MODEL`) | Claude resume reading, match review, tailored suggestions, interview practice, message drafts | Recruiter web search stays off until `RECRUITER_WEB_SEARCH=1` (or sign-in is required) |
+| **Claude recruiter web search** | `ANTHROPIC_API_KEY` and `RECRUITER_WEB_SEARCH=1`, optionally `FIND_RECRUITER_MAX_PER_HOUR` | Find Recruiter also searches the public web and reads public pages. This bills your Anthropic account | LinkedIn and other login-only sites are never read |
+| **Optional Supabase** | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`, `DAILY_RUN_EMAILS`, optionally `DAILY_MAX_SEARCHES`, `DAILY_BUDGET_SECONDS` | Password sign-in, synced copy across devices, the 8:00 AM Toronto morning run. Sign-in becomes required for paid routes | Nothing else changes |
+
+### Every environment variable, by name
+
+Set these in `.env.local` locally or in Vercel's Environment Variables. Names only; never commit a value. `.env.example` has the same list with comments.
+
+| Variable | Where it is read | Public to the browser? |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | Server | No |
+| `ANTHROPIC_MODEL` | Server | No |
+| `ADZUNA_APP_ID`, `ADZUNA_APP_KEY` | Server | No |
+| `RAPIDAPI_KEY` | Server | No |
+| `CMH_DEMO` | Server (allows labelled sample jobs in production) | No |
+| `RECRUITER_WEB_SEARCH` | Server | No |
+| `FIND_RECRUITER_MAX_PER_HOUR` | Server | No |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser (fixed at build time; protected by row-level security) | Yes, by design |
+| `SUPABASE_URL` | Server (optional alias of the public URL) | No |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server only. Bypasses row-level security | **Never** |
+| `CRON_SECRET` | Server, and a GitHub repository secret of the same name | No |
+| `DAILY_RUN_EMAILS`, `DAILY_MAX_SEARCHES`, `DAILY_BUDGET_SECONDS` | Server (morning run) | No |
+
+GitHub repository secrets used by workflows: `SITE_URL` and `CRON_SECRET` (the morning run only). The CI, CodeQL, dependency-review and deployment-check workflows use no secrets.
+
 ## Quick start
 
-You need Node.js 20.16 or newer.
+You need Node.js 20.16 or newer (CI uses Node 22).
 
 ```bash
 npm install
@@ -39,8 +87,27 @@ Open http://localhost:3000. With no keys the dev server shows sample jobs so you
 | `npm run build` | Production build (also type-checks) |
 | `npm run start` | Serve the production build |
 | `npm run lint` | Run ESLint |
-| `npm test` | Run the automated tests (Vitest) |
+| `npm test` | Run the unit tests (Vitest) |
 | `npm run typecheck` | Run the TypeScript compiler without emitting files |
+| `npm run test:e2e:install` | Download the Chromium browser used by the smoke tests (once) |
+| `npm run test:e2e` | Run the browser smoke tests against a production build (run `npm run build` first) |
+
+### Testing and releases
+
+Before opening a pull request, run the same checks CI runs: `npm test`, `npm run lint`, `npm run typecheck`, `npm run build`, then `npm run test:e2e`. If you already have Chrome or Edge, `PW_CHANNEL=chrome npm run test:e2e` (or `msedge`) uses it instead of downloading a browser.
+
+The browser smoke tests start the production build with every optional key blanked, mock the app's own job-search route, and **block every request that leaves the machine**, so a test fails if the app ever tries to reach Anthropic, Adzuna, JSearch, LinkedIn or any people-search service. They use only invented names and addresses.
+
+| Workflow | Runs on | What it checks |
+| --- | --- | --- |
+| **CI** (`ci.yml`), job *Unit tests, lint, typecheck, build* | Pull requests, pushes to `main` | `npm ci`, `npm test`, `npm run lint`, `npm run typecheck`, `npm run build` on Node 22 with the npm cache |
+| **CI**, job *Browser smoke tests* | Pull requests, pushes to `main` | `npm ci`, installs Chromium, `npm run build`, `npm run test:e2e`. Uploads the Playwright report only if it fails |
+| **CodeQL** (`codeql.yml`) | Pull requests, pushes to `main`, weekly | Static security analysis of the TypeScript source |
+| **Dependency review** (`dependency-review.yml`) | Pull requests | Fails a pull request that adds a dependency with a known high or critical vulnerability |
+| **Deployment smoke check** (`deployment-smoke.yml`) | A successful Production deployment, or run by hand with a URL | Two plain GET requests: the home page answers and contains the app, and `/api/status` has the expected shape. Never sends a POST, searches for jobs or starts a recruiter lookup |
+| **Morning job run** (`daily-run.yml`) | Daily schedule, by hand | Calls the protected morning-run endpoint (needs the `SITE_URL` and `CRON_SECRET` secrets) |
+
+Dependabot (`dependabot.yml`) opens weekly update pull requests for npm packages and GitHub Actions. Branch protection is a repository setting, not something these files can switch on: to require the CI checks before merging, enable it under Settings, Branches, and select **Unit tests, lint, typecheck, build** and **Browser smoke tests**. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## API keys
 
@@ -199,6 +266,25 @@ This part is optional and needs a free [Supabase](https://supabase.com) project.
 - With `ANTHROPIC_API_KEY` set, your resume text and the job postings in view are sent to Anthropic for analysis and scoring.
 - Anyone who can open a deployed copy can use your API keys through it. Add a Vercel Firewall rate-limit rule, or Vercel Deployment Protection, if the site is public. The app has a small per-instance rate limit, but it resets whenever a serverless instance restarts.
 
+### Privacy boundaries and external services
+
+What the app contacts, and when. Anything not listed here is never contacted.
+
+| Service | Contacted when | What is sent |
+| --- | --- | --- |
+| Adzuna or JSearch (RapidAPI) | You press Search jobs, or the morning run starts, and a job-board key is set | Your job title, city and filters. Not your resume |
+| Anthropic | You press an AI button and `ANTHROPIC_API_KEY` is set | The posting and your resume text for that action |
+| Anthropic web search and page reading | You press "Search the web for contacts" and recruiter web search is enabled | The company, job title, location and the start of the posting. Not your resume |
+| Supabase | Cloud sync is configured and you are signed in | Your synced data, into your own project |
+| Google, Bing, LinkedIn | **Only when you click a search link yourself**, in your own browser | Nothing from this app. The app never opens, reads or scrapes those pages |
+
+Hard boundaries for recruiter discovery:
+- No contact is ever invented. Every person shown has a source that names them, and an email, phone number or profile address appears only if a source prints it word for word. Nothing is built from a name.
+- LinkedIn and other login-only sites are never read, scraped or fetched. Profile addresses are kept only if they were a public search result or you pasted them.
+- Nothing is ever sent on your behalf. Messages are drafts you copy or open in your own email app.
+- Contacts, notes and networking history stay in your browser (and your own Supabase project if you turn sync on).
+- Tests and CI block outside network access and use invented data only.
+
 ## Deploy to GitHub and Vercel
 
 ### 1. Push to GitHub
@@ -238,6 +324,9 @@ Notes for Vercel:
 ## Project structure
 
 ```
+.github/                          Workflows (CI, CodeQL, dependency review, deployment check, morning run), Dependabot, issue and PR templates
+e2e/                              Browser smoke tests (Playwright); playwright.config.ts at the root
+tests/                            Unit tests (Vitest)
 src/
   app/
     page.tsx                      Page coordination, state, persistence
@@ -304,6 +393,9 @@ src/
 - **Banner says no job source is connected after adding keys.** Restart `npm run dev` so the new environment is loaded. If a live search failed, the results page shows the reason above the list.
 - **"The Anthropic API key was rejected."** Check `ANTHROPIC_API_KEY` for stray spaces or quotes.
 - **Claude requests go somewhere unexpected.** The Anthropic SDK honours an `ANTHROPIC_BASE_URL` environment variable. If one is set in your shell or tooling, requests go there instead of to Anthropic. Unset it to use the default endpoint.
+- **Recruiter discovery is disabled, or "Search the web for contacts" is missing.** Free mode is the default and is not an error: Find Recruiter still reads names printed in the posting and gives you search links. The web search button appears only when all of these are true: `ANTHROPIC_API_KEY` is set, and either `RECRUITER_WEB_SEARCH=1` is set or cloud sync is configured (which makes sign-in required), and you redeployed after setting them. Check `/api/status` on your site: `ai` must be `true` and `recruiterWebSearch` must be `true`. Other causes: Web search is not enabled for your Anthropic organisation in the Anthropic Console (the lookup fails with a clear message); you have reached `FIND_RECRUITER_MAX_PER_HOUR` or the per-visitor limit (3 per minute, 12 per hour); the job is a sample job or the posting does not name the employer ("Company not listed"), which are never searched; or you are not signed in on a site that requires sign-in.
+- **Find Recruiter shows nobody even though a recruiter exists.** Job boards often return only part of a posting (Adzuna returns 500 characters), so a name further down is not seen. The panel says when the description is partial and links to the full posting. Names on pages that need JavaScript or a login cannot be read.
+- **The browser smoke tests fail locally.** Run `npm run build` first (they test the production build), install the browser once with `npm run test:e2e:install` or set `PW_CHANNEL=chrome`, and make sure port 3100 is free. A failure that says the app "tried to reach an outside host" means a code change added a network call: that is the test doing its job.
 - **A console warning says the model is deprecated.** That is the SDK noting that `claude-sonnet-4-5` retires on 2026-11-30. Set `ANTHROPIC_MODEL=claude-sonnet-5-5` to move off it.
 
 ### Limits to know about (morning run)
