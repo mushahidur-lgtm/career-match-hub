@@ -27,6 +27,30 @@ function getClient(): Anthropic {
   return client;
 }
 
+/**
+ * A client for calls that bill per web search. It never retries: a retry would run, and charge for, the searches again.
+ * The timeout leaves room inside a 90 second route limit.
+ */
+let searchClient: Anthropic | null = null;
+export function getSearchClient(): Anthropic {
+  searchClient ??= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY?.trim(), timeout: 75_000, maxRetries: 0 });
+  return searchClient;
+}
+
+/** Runs a call on the active model, and once more on the fallback if that model has been retired. */
+export async function withModelFallback<T>(call: (model: string) => Promise<T>): Promise<T> {
+  const model = activeModel();
+  try {
+    return await call(model);
+  } catch (err) {
+    if (err instanceof Anthropic.NotFoundError && model !== FALLBACK_MODEL) {
+      retiredModel = model;
+      return call(FALLBACK_MODEL);
+    }
+    throw err;
+  }
+}
+
 /** The 4.5 generation and older reject the effort setting. */
 const supportsEffort = (model: string) => !/(?:sonnet|haiku)-4-5|-4-1|-4-0|-4-20|claude-3/.test(model);
 
