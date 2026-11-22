@@ -639,3 +639,24 @@ describe("which team hires for a job", () => {
     expect(plan.join("\n")).toMatch(/linkedin\.com\/in/);
   });
 });
+
+describe("a page that arrives as one long line", () => {
+  const ev = (text: string): WebEvidence => ({ results: [{ url: "https://careers.acme.example/team", title: "Careers - Acme Analytics" }], citations: [], pages: [{ url: "https://careers.acme.example/team", title: "Careers - Acme Analytics", text }] });
+  const claim = (name: string) => ({ name, sourceUrls: ["https://careers.acme.example/team"] });
+
+  it("does not tie a recruiter to a job named thousands of characters away", () => {
+    const text = `Jane Smith, Talent Acquisition Partner at Acme Analytics${" Plenty of other content about benefits and culture.".repeat(60)} Now hiring: Senior Data Engineer in Ottawa.`;
+    expect(text.length).toBeGreaterThan(2500);
+    const { contacts } = verifyCandidates([claim("Jane Smith")], ev(text), ctx, now);
+    expect(contacts[0].status).toBe("Likely match");
+    expect(contacts[0].jobs[0].jobSpecific).toBe(false);
+    expect(relationFor(contacts[0], ctx.jobKey)).toBe("Recruiter at this company");
+  });
+
+  it("does not give everyone on the page the job title that sits beside someone else", () => {
+    const text = `Omar Ali, HR Manager at Acme Analytics.${" Filler sentence about the office.".repeat(40)} Priya Nair, Recruiter for Senior Data Engineer roles at Acme Analytics.`;
+    const { contacts } = verifyCandidates([claim("Omar Ali"), claim("Priya Nair")], ev(text), ctx, now);
+    expect(contacts.find((c) => c.name === "Priya Nair")?.status).toBe("Verified");
+    expect(contacts.find((c) => c.name === "Omar Ali")?.status).not.toBe("Verified");
+  });
+});

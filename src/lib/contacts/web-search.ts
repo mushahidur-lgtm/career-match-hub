@@ -27,8 +27,14 @@ export interface FindInput {
 
 export const MAX_SEARCHES = 8;
 export const MAX_FETCHES = 5;
+/** Tokens of one page the model may read. Pages are re-sent if a long search is continued, so this bounds the cost. */
+export const MAX_PAGE_TOKENS = 6000;
 
-/** Sites that need a login, which must never be fetched. LinkedIn search results (title and address) can still be seen. */
+/**
+ * Sites that need a login, which must never be fetched. LinkedIn search results (title and address) can still be seen.
+ * Anthropic's server tools guide says a domain entry also covers its subdomains ("example.com" covers "docs.example.com"), so
+ * linkedin.com covers uk.linkedin.com and the rest. The extra entries are belt and braces.
+ */
 export const BLOCKED_FETCH_DOMAINS = ["linkedin.com", "www.linkedin.com", "ca.linkedin.com", "facebook.com", "www.facebook.com", "instagram.com", "www.instagram.com", "x.com", "twitter.com"];
 
 /**
@@ -89,6 +95,8 @@ export interface ParsedSearch {
   /** The searches the model ran and the pages it read, for showing what was looked at. */
   queries: string[];
   readHosts: string[];
+  /** True when the time limit or a cancel ended the search before the model finished. */
+  stoppedEarly?: boolean;
 }
 
 const splitUrls = (s: string) => s.split(/[\s,;]+/).map((u) => u.trim()).filter((u) => /^https?:\/\//i.test(u));
@@ -200,28 +208,50 @@ export function describeSearchError(err: unknown): string {
 export const describeToolError = (code: string) =>
   code === "unavailable" ? "Web search was temporarily unavailable." : code === "too_many_requests" ? "Web search is being rate limited. Try again shortly." : code === "max_uses_exceeded" ? "The search limit for one lookup was reached." : "Web search could not run.";
 
+/** One lookup may take at most this long in total, however many times the API pauses and continues it. */
+export const DEADLINE_MS = 90_000;
+
 /**
- * Runs one search, streaming what it is doing (each search it runs, each page it reads) to `onProgress`. A long search can be
- * paused by the API; it is continued up to twice. The client never retries a failed call, so a failure cannot bill twice.
+ * Runs one search, streaming what it is doing (each search it runs, each page it reads) to `onProgress`.
+ * - One overall deadline covers every round. When it passes, or the caller cancels, the call is aborted and what was already
+ *   gathered is used, and the answer says it stopped early.
+ * - The tool budget is counted across rounds: a continuation is only allowed the searches and page reads that remain, so one
+ *   lookup can never run more than MAX_SEARCHES searches and MAX_FETCHES page reads.
+ * - The client never retries a failed call, so a failure cannot bill twice.
  */
-export async function searchWeb(input: FindInput, onProgress?: (message: string) => void): Promise<SearchOutcome> {
+export async function searchWeb(input: FindInput, onProgress?: (message: string) => void, cancel?: AbortSignal): Promise<SearchOutcome> {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), DEADLINE_MS);
+  const onCancel = () => abort.abort();
+  cancel?.addEventListener("abort", onCancel);
+  const collected: ContentBlock[] = [];
+  let stoppedEarly = false;
   try {
     const result = await withModelFallback(async (model) => {
       const messages: MessageParam[] = [{ role: "user", content: userPrompt(input) }];
-      const parts: ParsedSearch[] = [];
       const usage: Usage = { searches: 0, fetches: 0, inputTokens: 0, outputTokens: 0 };
       for (let round = 0; round < 3; round++) {
-        const stream = getSearchClient().messages.stream({
-          model,
-          max_tokens: 4000,
-          system: SYSTEM,
-          messages,
-          tools: [
-            { type: "web_search_20250305", name: "web_search", max_uses: MAX_SEARCHES },
-            { type: "web_fetch_20250910", name: "web_fetch", max_uses: MAX_FETCHES, blocked_domains: BLOCKED_FETCH_DOMAINS, max_content_tokens: 12_000 },
-          ],
-        });
+        const searchesLeft = MAX_SEARCHES - usage.searches;
+        const fetchesLeft = MAX_FETCHES - usage.fetches;
+        if (round > 0 && (searchesLeft <= 0 || fetchesLeft <= 0)) {
+          stoppedEarly = true;
+          break;
+        }
+        const stream = getSearchClient().messages.stream(
+          {
+            model,
+            max_tokens: 4000,
+            system: SYSTEM,
+            messages,
+            tools: [
+              { type: "web_search_20250305", name: "web_search", max_uses: Math.max(1, searchesLeft) },
+              { type: "web_fetch_20250910", name: "web_fetch", max_uses: Math.max(1, fetchesLeft), blocked_domains: BLOCKED_FETCH_DOMAINS, max_content_tokens: MAX_PAGE_TOKENS },
+            ],
+          },
+          { signal: abort.signal },
+        );
         stream.on("contentBlock", (block) => {
+          collected.push(block);
           if (block.type === "server_tool_use") {
             const i = block.input as { query?: string; url?: string };
             if (block.name === "web_search" && i.query) onProgress?.(`Searching: ${i.query}`);
@@ -229,19 +259,31 @@ export async function searchWeb(input: FindInput, onProgress?: (message: string)
           } else if (block.type === "web_search_tool_result" && Array.isArray(block.content)) onProgress?.(`Found ${block.content.length} results`);
         });
         const message = await stream.finalMessage();
-        parts.push(parseResponse(message.content));
         usage.inputTokens += message.usage.input_tokens;
         usage.outputTokens += message.usage.output_tokens;
         usage.searches += message.usage.server_tool_use?.web_search_requests ?? 0;
         usage.fetches += message.usage.server_tool_use?.web_fetch_requests ?? 0;
         if (message.stop_reason !== "pause_turn") break;
+        if (abort.signal.aborted) {
+          stoppedEarly = true;
+          break;
+        }
         messages.push({ role: "assistant", content: message.content });
       }
-      return { model, parsed: mergeParsed(parts), usage };
+      return { model, usage };
     });
-    return { ok: true, ...result };
+    return { ok: true, ...result, parsed: { ...parseResponse(collected), stoppedEarly } };
   } catch (err) {
+    // A deadline or a cancel is not a failure: the searches already ran and were billed, so what they found is still used.
+    if (abort.signal.aborted && collected.length) {
+      const usage: Usage = { searches: collected.filter((b) => b.type === "server_tool_use" && b.name === "web_search").length, fetches: collected.filter((b) => b.type === "server_tool_use" && b.name === "web_fetch").length, inputTokens: 0, outputTokens: 0 };
+      return { ok: true, model: "unknown", usage, parsed: { ...parseResponse(collected), stoppedEarly: true } };
+    }
+    if (abort.signal.aborted) return { ok: false, message: "The search was stopped before it found anything." };
     console.error("find-recruiter search failed:", err instanceof Error ? err.message : err);
     return { ok: false, message: describeSearchError(err) };
+  } finally {
+    clearTimeout(timer);
+    cancel?.removeEventListener("abort", onCancel);
   }
 }

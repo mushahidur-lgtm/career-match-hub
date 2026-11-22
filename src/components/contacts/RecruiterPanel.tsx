@@ -70,7 +70,8 @@ export function RecruiterPanel({ job }: { job: Job }) {
     // Only when the job changes: the lookup is cached by job.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
-  useEffect(() => () => controller.current?.abort(), []);
+  // Closing the window does not cancel a search: it keeps running on the server and is billed either way, so the result is
+  // still saved when it arrives. Only the Stop button cancels it.
 
   /** "first" searches fresh; "more" looks for different people and adds them to what was found. */
   async function run(mode: "first" | "more") {
@@ -169,7 +170,7 @@ export function RecruiterPanel({ job }: { job: Job }) {
           </div>
           <p className="text-xs text-muted">
             {api.webSearchAvailable
-              ? "Runs up to 8 searches and reads up to 5 public pages, such as the company's careers and team pages. Each search costs about $0.01 in search fees plus the model's normal usage (Anthropic's documented prices). Results are kept so this job is not searched again unless you ask."
+              ? "Runs up to 8 searches and reads up to 5 public pages, such as the company's careers and team pages. Each search costs about $0.01 in search fees, and reading pages and writing the answer uses model tokens on top, which can cost more than the searches. Results are kept so this job is not searched again unless you ask."
               : api.aiAvailable
                 ? "Web lookups are switched off on this site because each one costs money. The site owner can turn them on (RECRUITER_WEB_SEARCH=1, see the README). Until then, only names stated in the posting are shown."
                 : "Web search needs an Anthropic API key on this site (ANTHROPIC_API_KEY). Until then, only names stated in the posting are shown, and the posting text is often too short to name anyone."}
@@ -260,7 +261,7 @@ export function RecruiterPanel({ job }: { job: Job }) {
 
       {find?.usage && (
         <p className="text-xs text-muted">
-          This job&apos;s searches so far: {find.usage.searches} web {find.usage.searches === 1 ? "search" : "searches"} (about ${(find.usage.searches * FEE_PER_SEARCH).toFixed(2)} in search fees) and {find.usage.fetches} {find.usage.fetches === 1 ? "page" : "pages"} read, plus the model&apos;s usage.
+          This job&apos;s searches so far: {find.usage.searches} web {find.usage.searches === 1 ? "search" : "searches"} (about ${(find.usage.searches * FEE_PER_SEARCH).toFixed(2)} in search fees), {find.usage.fetches} {find.usage.fetches === 1 ? "page" : "pages"} read, and about {Math.round(find.usage.inputTokens / 1000)}k input and {Math.round(find.usage.outputTokens / 1000)}k output tokens. The token cost is not estimated here: check your model&apos;s price in Anthropic&apos;s pricing.
         </p>
       )}
 

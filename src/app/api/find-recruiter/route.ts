@@ -44,6 +44,8 @@ export interface FindRecruiterResponse {
   /** Why those were left out, without repeating. */
   reasons?: string[];
   latencyMs?: number;
+  /** True when the search hit its time limit or was stopped, so fewer people may have been found. */
+  stoppedEarly?: boolean;
 }
 
 export type StreamLine = { type: "progress"; message: string } | { type: "result"; result: FindRecruiterResponse } | { type: "error"; error: string };
@@ -90,12 +92,20 @@ export async function POST(req: Request) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (line: StreamLine) => controller.enqueue(encoder.encode(`${JSON.stringify(line)}\n`));
+      // A page that closed or stopped the search must not make the server throw: the lookup still finishes and is billed.
+      const send = (line: StreamLine) => {
+        try {
+          controller.enqueue(encoder.encode(`${JSON.stringify(line)}\n`));
+        } catch {
+          /* the reader has gone */
+        }
+      };
       const started = Date.now();
       try {
         const result = await searchWeb(
           { company: job.company, jobTitle: job.title, category: job.category, description: job.description, location: job.location, applyHost: host, exclude: job.exclude, pass: job.pass },
           (message) => send({ type: "progress", message }),
+          req.signal,
         );
         if (!result.ok) {
           send({ type: "error", error: result.message });
@@ -109,7 +119,8 @@ export async function POST(req: Request) {
         send({ type: "progress", message: "Checking each name against what the pages say" });
         const { contacts, dropped } = verifyCandidates(found.raw, found.evidence, { jobKey: job.jobKey, jobTitle: job.title, company: job.company, applyUrl: job.applyUrl, location: job.location }, new Date());
         const reasons = [...new Set(dropped.map((d) => d.reason))].slice(0, 4);
-        const note = contacts.length
+        const early = found.stoppedEarly ? " The search hit its time limit and stopped early, so fewer people may have been found." : "";
+        const base = contacts.length
           ? dropped.length
             ? `${dropped.length} suggested ${dropped.length === 1 ? "name was" : "names were"} left out because no source backed ${dropped.length === 1 ? "it" : "them"} up.`
             : null
@@ -118,15 +129,20 @@ export async function POST(req: Request) {
             : found.searches === 0
               ? "No search could be run."
               : "No page that was found names a recruiter or HR contact for this job.";
+        const note = base || early ? `${base ?? ""}${early}`.trim() : null;
         send({
           type: "result",
-          result: { candidates: contacts, note, searches: found.searches, fetches: found.fetches, queries: found.queries.slice(0, 12), readHosts: found.readHosts, usage, unsupported: dropped.length, reasons, latencyMs: Date.now() - started },
+          result: { candidates: contacts, note, searches: found.searches, fetches: found.fetches, queries: found.queries.slice(0, 12), readHosts: found.readHosts, usage, unsupported: dropped.length, reasons, latencyMs: Date.now() - started, stoppedEarly: found.stoppedEarly },
         });
       } catch (err) {
         console.error("find-recruiter stream failed:", err instanceof Error ? err.message : err);
         send({ type: "error", error: "The search failed. Nothing was saved. Try again." });
       } finally {
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          /* already closed */
+        }
       }
     },
   });

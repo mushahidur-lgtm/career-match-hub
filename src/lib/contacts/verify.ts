@@ -139,6 +139,13 @@ function ownedBy(line: string, name: string, at: number, others: string[], max =
   return true;
 }
 
+/** A line longer than this is broken at sentence ends, so one person's passage cannot cover a whole page that arrived as a single line. */
+const LONG_LINE = 400;
+const splitLongLines = (text: string) => text.split("\n").map((l) => (l.length > LONG_LINE ? l.replace(/([.!?])\s+(?=[A-Z])/g, "$1\n") : l)).join("\n");
+
+/** How far either side of a name (in characters) the company, role and job must appear to count as being about that person. */
+const WINDOW = 250;
+
 /** Page text kept per source. Enough for a team page, bounded so one huge page cannot swamp the rest. */
 const MAX_PAGE_CHARS = 80_000;
 
@@ -169,7 +176,8 @@ export function verifyCandidates(raw: RawCandidate[], ev: WebEvidence, job: JobC
   for (const r of resultByUrl.values()) poolByUrl.set(urlKey(r.url), r.title);
   for (const p of ev.pages ?? []) {
     const k = urlKey(p.url);
-    poolByUrl.set(k, `${poolByUrl.get(k) ?? ""}\n${p.text.slice(0, MAX_PAGE_CHARS)}`);
+    // Page text can arrive as one long line. Breaking it at sentence ends keeps one person's passage from covering the whole page.
+    poolByUrl.set(k, `${poolByUrl.get(k) ?? ""}\n${splitLongLines(p.text.slice(0, MAX_PAGE_CHARS))}`);
   }
   for (const c of ev.citations) {
     const k = urlKey(c.url);
@@ -214,7 +222,9 @@ export function verifyCandidates(raw: RawCandidate[], ev: WebEvidence, job: JobC
         const host = hostOf(x.u);
         const nearText = nearName(x.pool, name);
         const onDomainHost = companyHostPart.length > 2 && host.replace(/[^a-z0-9]/g, "").includes(companyHostPart.replace(/[^a-z0-9]/g, ""));
-        const companyInPassage = companyKnown && normalizeCompany(line).includes(companyNorm);
+        // Company and job must be near the name (about 250 characters either side), not merely somewhere on the same line.
+        const windowText = nearName(x.pool, name, WINDOW);
+        const companyInPassage = companyKnown && normalizeCompany(windowText).includes(companyNorm);
         // Being on the company's own site counts only while the passage does not say they work somewhere else.
         const onDomain = onDomainHost && (companyInPassage || !namesAnotherEmployer(nearText, companyNorm));
         return {
@@ -224,8 +234,8 @@ export function verifyCandidates(raw: RawCandidate[], ev: WebEvidence, job: JobC
           role: roleNearest(x.pool, name),
           host,
           onDomain,
-          company: companyKnown && normalizeCompany(line).includes(companyNorm),
-          jobHit: (jobTitleNorm.length > 4 && normalizeTitle(line).includes(jobTitleNorm)) || (applyKey !== null && x.u === applyKey),
+          company: companyInPassage,
+          jobHit: (jobTitleNorm.length > 4 && normalizeTitle(windowText).includes(jobTitleNorm)) || (applyKey !== null && x.u === applyKey),
         };
       });
     if (!per.length) {
