@@ -394,3 +394,54 @@ export interface AnalyzeResumeResponse {
 export interface ApiError {
   error: string;
 }
+
+/* ---------- search history and what your searches have shown you ---------- */
+
+/** A posting your searches returned, kept in compact form (no description) so trends can be counted. */
+export interface SeenJob {
+  /** `jobKey` of the posting, so the same job found twice is one entry. */
+  key: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  /** How many searches returned it. */
+  seenCount: number;
+  title: string;
+  company: string;
+  location: string;
+  workMode: WorkMode;
+  employmentType: EmploymentType;
+  category: JobCategory;
+  /** Pay the employer stated, as yearly CAD. Null when none was stated, or only an estimate or another currency was given. */
+  pay: { lo: number; hi: number } | null;
+  postedAt: string | null;
+  source: JobSource;
+  /** Latest match score, and how sure the engine was. Null when the search ran without a resume. */
+  score: number | null;
+  confidence: Confidence | null;
+  /** Skills the posting asks for, read from the posting text when it was seen. */
+  required: string[];
+  preferred: string[];
+  /** True when the provider only gave part of the posting, so its skills are undercounted. */
+  truncated: boolean;
+}
+
+/** One search you ran. */
+export interface SearchRecord {
+  id: string;
+  at: string;
+  filters: SearchFilters;
+  provider: ProviderStatus;
+  scoring: SearchResponse["scoring"];
+  resumeName: string | null;
+  resultCount: number;
+  /** How many of the results had not been seen in an earlier search. */
+  newCount: number;
+  /** Mean match score of the scored results, or null when nothing was scored. */
+  avgScore: number | null;
+  scoredCount: number;
+}
+
+export interface IntelStore {
+  history: SearchRecord[];
+  seen: SeenJob[];
+}

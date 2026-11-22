@@ -1,7 +1,8 @@
 import { z } from "zod";
-import type { ResumeVersion, SavedJob, SearchFilters, SearchPreferences } from "@/types/job";
+import type { IntelStore, ResumeVersion, SavedJob, SearchFilters, SearchPreferences } from "@/types/job";
 import {
   FiltersSchema,
+  IntelSchema,
   PreferencesSchema,
   ProfileSchema,
   ResumeSchema,
@@ -21,6 +22,8 @@ export interface AppData {
   filters: SearchFilters;
   preferences: SearchPreferences;
   saved: SavedJob[];
+  /** Search history. Absent in backups made before it existed. */
+  intel?: IntelStore;
 }
 
 const DataV2 = z.object({
@@ -29,6 +32,7 @@ const DataV2 = z.object({
   filters: FiltersSchema,
   preferences: PreferencesSchema,
   saved: SavedJobsSchema,
+  intel: IntelSchema.optional(),
 });
 
 /** Backups made before resume versions existed held a single resume and profile. */

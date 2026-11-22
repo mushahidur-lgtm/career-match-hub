@@ -229,3 +229,45 @@ export function validate<T extends z.ZodType>(schema: T, value: unknown): z.infe
   const result = schema.safeParse(value);
   return result.success ? result.data : null;
 }
+
+/* ---------- search history ---------- */
+
+export const SeenJobSchema = z.object({
+  key: str(500),
+  firstSeenAt: iso,
+  lastSeenAt: iso,
+  seenCount: z.number().int().min(1).max(100_000),
+  title: str(200),
+  company: str(200),
+  location: str(200),
+  workMode: z.enum([...WORK_MODES, "Not stated"]),
+  employmentType: z.enum([...EMPLOYMENT_TYPES, "Internship", "Not stated"]),
+  category: z.enum(JOB_CATEGORIES),
+  pay: z.object({ lo: z.number().min(0).max(10_000_000), hi: z.number().min(0).max(10_000_000) }).nullable(),
+  postedAt: iso.nullable(),
+  source: z.enum(["adzuna", "jsearch", "demo", "manual"]),
+  score: z.number().min(0).max(100).nullable(),
+  confidence: z.enum(["high", "medium", "low"]).nullable(),
+  required: z.array(str(120)).max(60),
+  preferred: z.array(str(120)).max(60),
+  truncated: z.boolean(),
+});
+
+export const SearchRecordSchema = z.object({
+  id: str(80),
+  at: iso,
+  filters: FiltersSchema,
+  provider: z.enum(["adzuna", "jsearch", "demo", "none"]),
+  scoring: z.enum(["ai", "heuristic", "mixed", "none"]),
+  resumeName: str(120).nullable(),
+  resultCount: z.number().int().min(0).max(10_000),
+  newCount: z.number().int().min(0).max(10_000),
+  avgScore: z.number().min(0).max(100).nullable(),
+  scoredCount: z.number().int().min(0).max(10_000),
+});
+
+/** The whole store, as written in a backup. Entries are checked one at a time when read from storage. */
+export const IntelSchema = z.object({
+  history: z.array(SearchRecordSchema).max(500),
+  seen: z.array(SeenJobSchema).max(5000),
+});

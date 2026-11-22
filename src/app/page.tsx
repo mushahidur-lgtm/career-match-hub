@@ -7,6 +7,7 @@ import { AppShell, normalizeTab, type Tab } from "@/components/AppShell";
 import { AddApplicationDialog } from "@/components/AddApplicationDialog";
 import { ApplicationDialog, type ApplicationTab } from "@/components/ApplicationDialog";
 import { ApplicationsPage } from "@/components/ApplicationsPage";
+import { CareerIntelligence } from "@/components/CareerIntelligence";
 import { InterviewTracker } from "@/components/InterviewTracker";
 import { JobCard } from "@/components/JobCard";
 import { DetailContext, JobDetailDialog } from "@/components/JobDetailDialog";
@@ -14,6 +15,7 @@ import { Overview } from "@/components/Overview";
 import { ResultFilters } from "@/components/ResultFilters";
 import { ResumeManager } from "@/components/ResumeManager";
 import { SearchFilters } from "@/components/SearchFilters";
+import { SearchHistory } from "@/components/SearchHistory";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { StatusBanner } from "@/components/StatusBanner";
 import { Notice, inputClass, secondaryButton } from "@/components/ui";
@@ -24,6 +26,8 @@ import { applicationsToCsv, jobsToCsv } from "@/lib/export";
 import { sortJobs } from "@/lib/format";
 import { profileSkills } from "@/lib/heuristics";
 import { newId, uniqueName } from "@/lib/ids";
+import { EMPTY_INTEL, clearHistory, clearSeen, mergeIntel, recordSearch, removeSearch } from "@/lib/history";
+import { readIntel, stashIntel } from "@/lib/history-load";
 import { computeOverview } from "@/lib/overview";
 import { addSavedJob, findSaved, removeSavedJob, setSavedNotes, setSavedStatus, updateSavedJob } from "@/lib/saved";
 import { DEFAULT_REFINE, RefineSchema, refineJobs, type RefineFilters } from "@/lib/refine";
@@ -39,6 +43,7 @@ import {
   type Application,
   type ApplicationStatus,
   type CandidateProfile,
+  type IntelStore,
   type Job,
   type ResumeVersion,
   type SavedJob,
@@ -82,9 +87,20 @@ export default function Home() {
     }
     return kept;
   });
+  // What your searches have shown you. Read entry by entry, like applications.
+  const [intelSkipped, setIntelSkipped] = useState(0);
+  const [intel, setIntel] = usePersistentState<IntelStore>("cmh:intel", EMPTY_INTEL, (value) => {
+    const r = readIntel(value);
+    if (!r) return undefined;
+    if (r.rejected.length) {
+      stashIntel(r.rejected);
+      setIntelSkipped(r.rejected.length);
+    }
+    return r.store;
+  });
   const [sort, setSort] = usePersistentState<SortKey>("cmh:sort", "score");
   const [refine, setRefine] = usePersistentState<RefineFilters>("cmh:refine", DEFAULT_REFINE, check(RefineSchema));
-  const recovered = resumesLost || savedLost || skipped > 0;
+  const recovered = resumesLost || savedLost || skipped > 0 || intelSkipped > 0;
 
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [loading, setLoading] = useState(false);
@@ -160,14 +176,16 @@ export default function Home() {
           throw new Error(body?.error || "The search failed. Try again.");
         }
         const data = (await res.json()) as SearchResponse;
-        setResults({ ...data, filters: f, searchedAt: new Date().toISOString(), profileKey: scoreKeyOf(active, preferences) });
+        const at = new Date().toISOString();
+        setResults({ ...data, filters: f, searchedAt: at, profileKey: scoreKeyOf(active, preferences) });
+        setIntel((store) => recordSearch(store, { at, filters: f, response: data, resume: active }));
       } catch (err) {
         setSearchError(err instanceof Error ? err.message : "The search failed. Try again.");
       } finally {
         setLoading(false);
       }
     },
-    [filters, active, preferences, setResults],
+    [filters, active, preferences, setResults, setIntel],
   );
 
   /* ----- saved jobs ----- */
@@ -211,11 +229,12 @@ export default function Home() {
   const rereadProfile = (id: string, p: CandidateProfile) => setResumes((list) => list.map((r) => (r.id === id ? { ...r, profile: p } : r)));
 
   /* ----- backup ----- */
-  const appData: AppData = { resumes, activeResumeId: active?.id ?? null, filters, preferences, saved };
+  const appData: AppData = { resumes, activeResumeId: active?.id ?? null, filters, preferences, saved, intel };
   const importData = (d: AppData, mode: "merge" | "replace") => {
     if (mode === "merge") {
       setSaved((list) => mergeSavedJobs(list, d.saved));
       setResumes((list) => mergeResumes(list, d.resumes));
+      if (d.intel) setIntel((store) => mergeIntel(store, d.intel!));
       if (!active && d.resumes[0]) setActiveId(d.activeResumeId ?? d.resumes[0].id);
       return;
     }
@@ -224,6 +243,8 @@ export default function Home() {
     setFilters(d.filters);
     setPreferences(d.preferences);
     setSaved(mergeSavedJobs([], d.saved));
+    // A backup from before search history existed leaves the history you have now alone.
+    if (d.intel) setIntel(d.intel);
     setResults(null);
   };
   const savePreferences = (p: SearchPreferences) => {
@@ -392,6 +413,28 @@ export default function Home() {
               </section>
             )}
           </div>
+        ) : tab === "intelligence" ? (
+          <CareerIntelligence
+            intel={intel}
+            applications={saved}
+            skills={profile ? profileSkills(profile.skills) : []}
+            roles={[...preferences.primaryRoles, ...preferences.secondaryRoles]}
+            hasResume={Boolean(profile)}
+            onGo={setTab}
+          />
+        ) : tab === "history" ? (
+          <SearchHistory
+            intel={intel}
+            onRun={(f) => {
+              setFilters(f);
+              setTab("discover");
+              void search(f);
+            }}
+            onRemove={(id) => setIntel((s) => removeSearch(s, id))}
+            onClearSearches={() => setIntel((s) => clearHistory(s))}
+            onForgetAll={() => setIntel(clearSeen())}
+            onGo={setTab}
+          />
         ) : tab === "interviews" ? (
           <InterviewTracker items={saved} onOpen={openApplication} onGoApplications={() => setTab("applications")} />
         ) : tab === "settings" ? (
