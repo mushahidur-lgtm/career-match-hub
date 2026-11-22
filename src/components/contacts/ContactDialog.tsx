@@ -19,7 +19,7 @@ import {
 } from "@/types/contacts";
 import { Notice, inputClass, primaryButton, secondaryButton } from "../ui";
 import { useContacts } from "./context";
-import { Cautions, ContactLinks, Evidence, StatusBadge, confidenceText } from "./parts";
+import { Cautions, ConfidenceLabel, ContactLinks, Evidence, confidenceText } from "./parts";
 import { Modal } from "./RecruiterDialog";
 
 const SEND_ACTIVITY: Record<DraftKind, ActivityType> = { connection: "Connection request sent", intro: "Message sent", "follow-up": "Follow-up sent", email: "Email sent" };
@@ -52,7 +52,7 @@ export function ContactDialog({ id, onClose }: { id: string; onClose: () => void
       <div className="space-y-8">
         <section aria-label="Verification" className="space-y-2">
           <div className="flex flex-wrap items-center gap-3">
-            <StatusBadge status={c.status} />
+            <ConfidenceLabel contact={c} />
             <span className="text-sm text-muted">{c.origin === "manual" ? "Added by you." : confidenceText(c)} Last checked {c.lastVerifiedAt}.</span>
             {c.status !== "Verified" && (
               <button type="button" className={secondaryButton} onClick={() => api.verify(c.id)}>

@@ -2,6 +2,7 @@
 
 import { AlertTriangle, ExternalLink, Link2, Mail, Phone } from "lucide-react";
 import { mailtoLink, webLink } from "@/lib/contacts/links";
+import { confidenceBand, relationFor } from "@/lib/contacts/model";
 import type { Contact, ContactStatus } from "@/types/contacts";
 import { Badge } from "../ui";
 
@@ -96,3 +97,20 @@ export function ContactLinks({ contact }: { contact: Contact }) {
 }
 
 export const confidenceText = (c: Contact) => `Confidence ${c.confidence} of 100, worked out from the sources`;
+
+const BAND_TONE = { High: "good", Medium: "info", Low: "warn" } as const;
+
+/**
+ * How sure we are, and what this person is to this job. Low confidence is never presented as a verified recruiter:
+ * it says plainly that it needs checking.
+ */
+export function ConfidenceLabel({ contact, jobKey }: { contact: Contact; jobKey?: string }) {
+  const band = confidenceBand(contact.status);
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Badge tone={BAND_TONE[band]}>{band} confidence</Badge>
+      <Badge tone="neutral">{relationFor(contact, jobKey)}</Badge>
+      {band === "Low" && <span className="text-xs text-warn">Possible contact, not verified. Check before you use it.</span>}
+    </div>
+  );
+}
