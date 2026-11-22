@@ -1,0 +1,43 @@
+name: Morning job run
+
+# Calls the site's protected endpoint, which searches for your primary roles and stores the result for you.
+# GitHub schedules run in UTC and Toronto observes daylight saving, so the job is started at both 12:00 and
+# 13:00 UTC. The endpoint runs from 8:00 AM Toronto time, once a day, so the extra start does nothing.
+# GitHub often starts scheduled jobs late. That is fine: the endpoint runs whenever it is called after 8:00.
+on:
+  schedule:
+    - cron: "0 12 * * *"
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Run now even if it is before 8:00 AM Toronto time or already ran today"
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Call the daily endpoint
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SITE_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "Add the SITE_URL and CRON_SECRET repository secrets (see the README)."
+            exit 1
+          fi
+          body='{}'
+          if [ "${FORCE:-}" = "true" ]; then body='{"force":true}'; fi
+          code=$(curl -sS -o response.json -w "%{http_code}" --max-time 330 -X POST "${SITE_URL%/}/api/cron/daily" \
+            -H "Authorization: Bearer ${CRON_SECRET}" -H "Content-Type: application/json" -d "$body")
+          echo "HTTP $code"
+          cat response.json
+          echo
+          [ "$code" = "200" ]

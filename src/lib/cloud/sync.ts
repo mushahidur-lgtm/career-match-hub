@@ -1,4 +1,4 @@
-import { buildBackup, mergeResumes, mergeSavedJobs, type AppData } from "@/lib/backup";
+import { mergeResumes, mergeSavedJobs, type AppData } from "@/lib/backup";
 import { EMPTY_INTEL, mergeIntel } from "@/lib/history";
 
 /**
@@ -64,10 +64,20 @@ export function mergeAppData(local: AppData, cloud: AppData): AppData {
 export const isEmptyData = (d: AppData): boolean =>
   d.resumes.length === 0 && d.saved.length === 0 && (d.intel?.history.length ?? 0) === 0 && (d.intel?.seen.length ?? 0) === 0;
 
-/** A short fingerprint of what would be synced. Not secure; it only notices change. */
+/**
+ * A short fingerprint of what is synced, so a change can be noticed. Order does not matter, and the search filters
+ * are left out: they are per-device and change constantly, and must not cause a save. The selected resume is included, because the morning run uses it, and a pull applies it so two devices agree.
+ */
 export function hashData(d: AppData): string {
-  // exportedAt is left out so the fingerprint does not change on its own.
-  const text = buildBackup(d, new Date(0));
+  const by = <T,>(list: T[], key: (x: T) => string) => [...list].sort((a, b) => key(a).localeCompare(key(b)));
+  const text = JSON.stringify({
+    resumes: by(d.resumes, (r) => r.id),
+    activeResumeId: d.activeResumeId,
+    preferences: d.preferences,
+    saved: by(d.saved, (s) => s.job.id),
+    history: by(d.intel?.history ?? [], (h) => h.id),
+    seen: by(d.intel?.seen ?? [], (j) => j.key),
+  });
   let h = 5381;
   for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
   return `${text.length}:${(h >>> 0).toString(36)}`;

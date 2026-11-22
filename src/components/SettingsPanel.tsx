@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Download, HardDriveDownload, Save, Upload } from "lucide-react";
 import { buildBackup, parseBackup, type AppData } from "@/lib/backup";
 import { clearSnapshots, hasSnapshots } from "@/lib/storage";
@@ -20,11 +20,13 @@ interface Props {
   recovered: boolean;
   onSavePreferences: (p: SearchPreferences) => void;
   onImport: (data: AppData, mode: "merge" | "replace") => void;
+  /** Sign-in and sync, shown above the backup tools. */
+  account?: ReactNode;
 }
 
 const lines = (s: string) => [...new Set(s.split("\n").map((l) => l.trim()).filter(Boolean))].slice(0, 60);
 
-export function SettingsPanel({ data, recovered, onSavePreferences, onImport }: Props) {
+export function SettingsPanel({ data, recovered, onSavePreferences, onImport, account }: Props) {
   const p = data.preferences;
   const [minSalary, setMinSalary] = useState(String(p.minSalary));
   const [locations, setLocations] = useState(p.locations.join("\n"));
@@ -175,6 +177,8 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport }: 
         </div>
       </form>
 
+      <div className="space-y-8">
+      {account}
       <section aria-labelledby="data-heading" className="space-y-4">
         <div>
           <h2 id="data-heading" className="font-display text-xl font-semibold">
@@ -264,6 +268,7 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport }: 
           </div>
         )}
       </section>
+      </div>
     </div>
   );
 }

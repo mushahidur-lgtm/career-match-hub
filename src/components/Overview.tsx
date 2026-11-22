@@ -18,9 +18,11 @@ interface Props {
   onOpenJob: (job: Job) => void;
   onOpenApplication: (id: string, tab?: ApplicationTab) => void;
   onGo: (tab: Tab) => void;
+  /** Shown under the page heading, for example this morning's automatic search. */
+  extra?: ReactNode;
 }
 
-export function Overview({ stats, resumeName, provider, hasSearched, onOpenJob, onOpenApplication, onGo }: Props) {
+export function Overview({ stats, resumeName, provider, hasSearched, onOpenJob, onOpenApplication, onGo, extra }: Props) {
   const sourceConnected = provider === "adzuna" || provider === "jsearch";
   const sampleOnly = provider === "demo";
   const started = Boolean(resumeName) && hasSearched;
@@ -33,6 +35,8 @@ export function Overview({ stats, resumeName, provider, hasSearched, onOpenJob, 
           {resumeName ? `Matching with ${resumeName}.` : "Add a resume to start matching."} Numbers come from your latest search and the jobs you track.
         </p>
       </div>
+
+      {extra}
 
       {!started && <GetStarted hasResume={Boolean(resumeName)} sourceConnected={sourceConnected} sampleOnly={sampleOnly} hasSearched={hasSearched} onGo={onGo} />}
 

@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildBackup, type AppData } from "@/lib/backup";
+import { type AppData } from "@/lib/backup";
 import { DEFAULT_FILTERS, DEFAULT_PREFERENCES, type CandidateProfile, type IntelStore, type Job, type ResumeVersion } from "@/types/job";
 import { DailyPayloadSchema, readDailyPayload, replayRun, type DailyPayload } from "@/lib/cloud/daily-payload";
 import { handleDaily, secretMatches, type DailyDeps, type DailyStore } from "@/lib/cloud/daily-handler";
@@ -273,7 +273,6 @@ describe("combining two copies", () => {
     expect(isEmptyData(data())).toBe(false);
     expect(hashData(data())).toBe(hashData(data()));
     expect(hashData(data())).not.toBe(hashData(data({ saved: [a1] })));
-    expect(buildBackup(data()).length).toBeGreaterThan(0);
   });
 });
 

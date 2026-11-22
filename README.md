@@ -11,6 +11,7 @@ Upload your resume, see which jobs fit your skills, and track every application 
 - **Interview tracker.** Every interview across your applications: stage, format, date and time, interviewers, topics to review, questions to ask, preparation notes and feedback. Adding one moves the application to the Interview stage. Practice prompts come from the posting and are labelled as practice, not a prediction of what will be asked; a skill you lack is prompted as "how would you get up to speed", never as experience to claim. With a Claude key you can ask for tailored prompts and answer outlines, and any resume line it quotes is checked against your resume.
 - **Career intelligence.** Charts of what your own searches have shown you: new jobs found per day, average match score, where the jobs are, stated pay bands, remote versus hybrid versus on-site, the skills asked for most (and which you lack), the companies hiring for you, applications by status, how many applications reached an interview, and a comparison of your target roles (for example Data Engineer against BI Developer). Everything is counted from jobs your searches returned and applications you track. It is not the whole market, and the page says so. Each chart is labelled observed or estimate: match scores are the only estimates. Pay counts only what the employer stated in CAD. A conversion rate is withheld until you have sent 5 applications. Sample jobs from demo mode are left out unless you tick a box. Every chart has a table view.
 - **Search history.** Every search is kept in this browser (up to 200 searches and 800 jobs, no descriptions), so trends build over days and weeks. Run a search again, delete one, or forget everything. Searches made with no job source connected are not kept.
+- **Cloud sync and a morning run (optional).** Connect your own free Supabase project to sign in, keep your data in step across devices, and have a search run for you every day from 8:00 AM Toronto time. Off by default: without the keys the app is exactly the browser-only app described here. Sync never overwrites a copy it has not seen. The morning run uses rule-based scoring only, so it costs nothing beyond the job-board calls. Setup is below.
 - **Reminders.** The Overview lists follow-ups due, upcoming interviews, application deadlines, expected replies and offer decision dates, from the dates you set. They appear in the app only; nothing is emailed yet.
 - **Honest about its data.** Jobs come only from a connected job board (Adzuna or JSearch). With no job-board key a deployed site shows no jobs and says so. `npm run dev` shows clearly labelled sample jobs for development only. Resume analysis falls back to a keyword engine when there is no Claude key.
 - **Built for a permanent full-time search.** The default filter is Permanent full-time with a CAD $100,000 minimum. Jobs that state a lower salary are hidden, jobs that state none stay and are marked Salary unknown, and salaries a job board only estimated never hide a job. Edit your cities, roles and minimum in Settings.
@@ -109,9 +110,40 @@ A part the posting gives no information about is skipped, and the remaining part
 
 Scores are guidance about fit. They do not predict hiring decisions.
 
+## Cloud sync and the morning run
+
+This part is optional and needs a free [Supabase](https://supabase.com) project. Nothing here is created for you: you make the project and put its keys into your own settings. Never paste keys into chat.
+
+**What it does**
+
+- **Sync.** After you sign in and turn it on, your resumes (full text), applications, notes, interviews, search history and preferences are copied to a private table in your own Supabase project, and kept in step between devices. Row-level security means only your signed-in account can read or change them.
+- **It never overwrites what it has not seen.** Every save names the version it started from. If another device saved in the meantime, the two are combined instead (applications and resumes by identity, history by id; the newer copy of an application wins) and a copy of this device's data is kept first under `cmh:backup:pre-sync`. A change made on one device is carried to the other only when the other has not changed; deletions are not carried over by a combine. If the cloud copy disappears, nothing is re-uploaded until you say so.
+- **Morning run.** A scheduled GitHub job calls `/api/cron/daily`. From 8:00 AM Toronto time, once a day, it searches your primary roles in your first cities (up to 12 job-board calls, set with `DAILY_MAX_SEARCHES`), scores them with your selected resume by the rules (no Claude calls, no AI cost), and stores the result. Your browser picks it up the next time you open the app, adds it to your search history and shows it on the Overview. Sample data is never used, and a search that failed is not recorded.
+- **No email or push notifications yet.** Those need another service (some are paid), so the results appear in the app only.
+
+**Cost.** Supabase's free plan covers one person's use. Supabase pauses free projects after a period of inactivity (check their current terms); daily activity from the morning run should keep yours awake, but I have not verified that. GitHub Actions is free for this use. The job-board quota is the real limit: Adzuna does not publish its free-tier number in the places I could check, and one unofficial source says about 1,000 calls a month. 12 calls a day is about 360 a month. Check your own plan on the job board's dashboard and lower `DAILY_MAX_SEARCHES` if needed.
+
+**Setup**
+
+1. Create a project at supabase.com. In **SQL Editor**, paste the contents of `supabase/migrations/0001_init.sql` and run it.
+2. In **Authentication, Users**, choose **Add user** and create your own account with an email and password. (The app has no sign-up screen on purpose.)
+3. In the Supabase dashboard under **Authentication** (the exact menu names change, so look for the sign-in or providers settings), turn **off** "Allow new users to sign up". This stops strangers creating accounts on your project.
+4. In **Project Settings, API**, copy the Project URL, the anon public key and the service_role key.
+5. In **Vercel, Project Settings, Environment Variables**, add `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (server only), `CRON_SECRET` (a long random string you make up, at least 16 characters) and `DAILY_RUN_EMAILS` (your sign-in email). **Redeploy afterwards**: the two `NEXT_PUBLIC` values are fixed when the site is built. For local use, put the same names in `.env.local`.
+6. In **GitHub, Settings, Secrets and variables, Actions**, add repository secrets `SITE_URL` (your https site address, with no trailing path) and `CRON_SECRET` (the same string as in Vercel).
+7. Open the app, **Settings, Cloud sync**, sign in and turn on sync. The morning run needs this first, because it reads your resume and preferences from the synced copy.
+8. Test it: in GitHub, **Actions, Morning job run, Run workflow**, tick "force", and run. The log shows how many searches and jobs it found. Refresh the app and look at the Overview.
+
+**Good to know**
+
+- Scheduled GitHub workflows run only on the default branch, can start several minutes late (the endpoint runs whenever it is called after 8:00 Toronto time), and are **disabled by GitHub after 60 days with no repository activity**. If the morning run stops, open the Actions tab and re-enable the workflow; a commit also resets the clock.
+- Sign-in is by email and password with Supabase's session kept in this browser. Use **Sign out** on shared computers.
+- **Delete my cloud data** (Settings) removes the synced copy and the stored runs. It does not touch this device.
+
 ## Privacy
 
-- Your resume versions, profiles, filters, results and saved jobs live in your browser's `localStorage`. Nothing is stored on the server and there is no database.
+- By default your resume versions, profiles, filters, results and saved jobs live only in your browser's `localStorage`. Nothing is stored on the server and there is no database.
+- **If you turn on cloud sync**, a copy of your resumes (full text), applications, notes, interviews, search history and preferences is stored in your own Supabase project, behind row-level security. The service key that the morning run uses exists only on the server and is read in one server-only file. Anyone with access to your Supabase project, Vercel project or GitHub secrets can see or use those things, so protect those accounts.
 - Tailored suggestions and interview practice are sent to Anthropic only when you press the button: the posting and your resume text. The result is cached in this browser (the last 20 jobs) so it is not requested again.
 - Search history is stored under its own key and is part of the JSON backup. It holds only compact notes of jobs seen (title, company, location, stated pay, score, skills), not descriptions. Entries that cannot be read are set aside like applications.
 - Applications load one at a time: if one entry cannot be read, the rest still load, and the damaged one is set aside. Settings lets you download what was set aside.
@@ -171,6 +203,7 @@ src/
       job-insights/route.ts       Tailored resume suggestions, checked against the resume
       interview-prep/route.ts     Tailored interview practice, checked against the resume
       status/route.ts             Which features are live (no key values)
+      cron/daily/route.ts         Protected morning run (called by GitHub Actions)
   components/
     AppShell.tsx                  Sidebar navigation (top bar on phones)
     Overview.tsx                  Overview page
@@ -198,6 +231,7 @@ src/
     ai-profile.ts                 Turns Claude's reading into a verified profile
     overview.ts                   Overview numbers
     history.ts, history-load.ts   Recording searches and jobs seen; reading them back
+    cloud/                        Optional Supabase sync, sign-in and the morning run
     intelligence.ts               Career intelligence figures, from observed data only
     refine.ts, dedupe.ts          Result filters and duplicate merging
     applications.ts               Pipeline moves, history, interviews, reminders

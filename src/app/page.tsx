@@ -4,10 +4,12 @@ import { Download } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { AppShell, normalizeTab, type Tab } from "@/components/AppShell";
+import { AccountPanel } from "@/components/AccountPanel";
 import { AddApplicationDialog } from "@/components/AddApplicationDialog";
 import { ApplicationDialog, type ApplicationTab } from "@/components/ApplicationDialog";
 import { ApplicationsPage } from "@/components/ApplicationsPage";
 import { CareerIntelligence } from "@/components/CareerIntelligence";
+import { DailyRunCard } from "@/components/DailyRunCard";
 import { InterviewTracker } from "@/components/InterviewTracker";
 import { JobCard } from "@/components/JobCard";
 import { DetailContext, JobDetailDialog } from "@/components/JobDetailDialog";
@@ -21,6 +23,7 @@ import { StatusBanner } from "@/components/StatusBanner";
 import { Notice, inputClass, secondaryButton } from "@/components/ui";
 import { jobKey, mergeResumes, mergeSavedJobs, type AppData } from "@/lib/backup";
 import { computeReminders } from "@/lib/applications";
+import { useCloud } from "@/lib/cloud/use-cloud";
 import { readApplications, stashRejected } from "@/lib/applications-load";
 import { applicationsToCsv, jobsToCsv } from "@/lib/export";
 import { sortJobs } from "@/lib/format";
@@ -230,6 +233,24 @@ export default function Home() {
 
   /* ----- backup ----- */
   const appData: AppData = { resumes, activeResumeId: active?.id ?? null, filters, preferences, saved, intel };
+
+  // What cloud sync watches. Search filters are left out on purpose: they change constantly and are per device.
+  const syncData = useMemo<AppData>(
+    () => ({ resumes, activeResumeId: active?.id ?? null, filters: DEFAULT_FILTERS, preferences, saved, intel }),
+    [resumes, active, preferences, saved, intel],
+  );
+  // Data arriving from the cloud. It never touches your search filters or your current results.
+  const applyCloud = (d: AppData) => {
+    setResumes(d.resumes);
+    setActiveId((cur) => {
+      const has = (id: string | null | undefined) => Boolean(id && d.resumes.some((r) => r.id === id));
+      return has(d.activeResumeId) ? d.activeResumeId : has(cur) ? cur : (d.resumes[0]?.id ?? null);
+    });
+    setPreferences(d.preferences);
+    setSaved(d.saved);
+    setIntel(d.intel ?? EMPTY_INTEL);
+  };
+  const cloud = useCloud({ data: syncData, apply: applyCloud, updateIntel: setIntel, intel });
   const importData = (d: AppData, mode: "merge" | "replace") => {
     if (mode === "merge") {
       setSaved((list) => mergeSavedJobs(list, d.saved));
@@ -275,7 +296,7 @@ export default function Home() {
 
       <main className="flex-1" aria-busy={!hydrated}>
         {!hydrated ? null : tab === "overview" ? (
-          <Overview stats={stats} resumeName={active?.name ?? null} provider={provider} hasSearched={Boolean(results)} onOpenJob={setDetailJob} onOpenApplication={openApplication} onGo={setTab} />
+          <Overview stats={stats} resumeName={active?.name ?? null} provider={provider} hasSearched={Boolean(results)} onOpenJob={setDetailJob} onOpenApplication={openApplication} onGo={setTab} extra={cloud.latestRun ? <DailyRunCard run={cloud.latestRun} /> : null} />
         ) : tab === "profile" ? (
           <ResumeManager
             versions={resumes}
@@ -438,7 +459,7 @@ export default function Home() {
         ) : tab === "interviews" ? (
           <InterviewTracker items={saved} onOpen={openApplication} onGoApplications={() => setTab("applications")} />
         ) : tab === "settings" ? (
-          <SettingsPanel data={appData} recovered={recovered} onSavePreferences={savePreferences} onImport={importData} />
+          <SettingsPanel data={appData} recovered={recovered} onSavePreferences={savePreferences} onImport={importData} account={<AccountPanel cloud={cloud} />} />
         ) : (
           <ApplicationsPage items={saved} reminders={reminders} onOpen={openApplication} onMove={moveApp} onAdd={() => setAdding(true)} onExport={exportApplications} onGoDiscover={() => setTab("discover")} />
         )}
