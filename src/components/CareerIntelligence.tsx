@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { SEEN_MAX } from "@/lib/history";
 import { computeIntelligence, RELEVANT_MIN, SUITABLE_MIN, type RoleRow } from "@/lib/intelligence";
 import type { Application, IntelStore } from "@/types/job";
 import type { Tab } from "./AppShell";
@@ -50,6 +51,12 @@ export function CareerIntelligence({ intel, applications, skills, roles, hasResu
         {data.firstSeen ? ` since ${dateLabel(data.firstSeen)}` : ""} and the {applications.length} {applications.length === 1 ? "application" : "applications"} you track. They describe what you have seen, not the whole job market, and a search that
         returns few jobs will show few. Nothing here is estimated or filled in. The one exception, match scores, is labelled as an estimate.
       </Notice>
+
+      {intel.seen.length >= SEEN_MAX - 10 && (
+        <Notice tone="warn">
+          Your history holds its maximum of {SEEN_MAX.toLocaleString()} jobs, so the oldest are being dropped to make room. Counts for earlier days can be lower than they were, and a job that was dropped and found again counts as new.
+        </Notice>
+      )}
 
       {data.demoObserved > 0 && (
         <label className="flex items-center gap-2 text-sm">

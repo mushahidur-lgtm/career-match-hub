@@ -9,6 +9,9 @@ export const dynamic = "force-dynamic";
 
 const MAX_QUERIES = Math.min(30, Math.max(1, Number(process.env.DAILY_MAX_SEARCHES) || 12));
 
+/** Stop starting new searches after this long. Lower DAILY_BUDGET_SECONDS if your function time limit is shorter than 300 seconds. */
+const BUDGET_MS = Math.min(280, Math.max(5, Number(process.env.DAILY_BUDGET_SECONDS) || 200)) * 1000;
+
 export async function POST(req: Request) {
   const sb = adminClient();
   return handleDaily(req, {
@@ -18,6 +21,6 @@ export async function POST(req: Request) {
     run: runDaily,
     now: () => new Date(),
     maxQueries: MAX_QUERIES,
-    budgetMs: 200_000,
+    budgetMs: BUDGET_MS,
   });
 }

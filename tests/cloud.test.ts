@@ -47,7 +47,9 @@ describe("planning the morning searches", () => {
   it("caps the number of job-board calls and searches earlier cities first", () => {
     const q = planQueries(prefs, 12);
     expect(q).toHaveLength(12);
-    expect(new Set(q.map((x) => x.location))).toEqual(new Set(prefs.locations.slice(0, 2)));
+    // Toronto is dropped because the Greater Toronto Area is searched as Toronto; every other city is covered.
+    expect(new Set(q.map((x) => x.location))).toEqual(new Set(["Greater Toronto Area, ON", "Ottawa, ON", "Gatineau, QC", "Remote - Canada"]));
+    expect(new Set(q.map((x) => `${x.query}|${x.location}`)).size).toBe(12);
     expect(new Set(q.map((x) => x.query)).size).toBe(prefs.primaryRoles.length);
     expect(q.every((x) => x.employmentType === "Permanent full-time" && x.minSalary === prefs.minSalary)).toBe(true);
   });
@@ -67,7 +69,7 @@ function fakeStore(over: Partial<DailyStore> = {}) {
   const store: DailyStore = {
     findUsers: async () => [{ id: "u1" }],
     hasRun: async () => false,
-    loadData: async () => data(),
+    loadData: async () => ({ ok: true as const, data: data() }),
     saveRun: async (user, date, p) => void saved.push({ user, date, payload: p }),
     pruneBefore: async () => undefined,
     ...over,
@@ -125,7 +127,9 @@ describe("the daily endpoint's work", () => {
     expect((await (await call(early, { authorization: `Bearer ${SECRET}` }, { force: true })).json()).results[0].status).toBe("ran");
   });
   it("says so when there is no synced data, and records nothing when no job source answered", async () => {
-    const none = fakeStore({ loadData: async () => null });
+    const none = fakeStore({ loadData: async () => ({ ok: false as const, reason: "missing" as const }) });
+    const bad = fakeStore({ loadData: async () => ({ ok: false as const, reason: "unreadable" as const }) });
+    expect((await (await call(deps({ store: bad.store }))).json()).results[0].reason).toMatch(/could not be read/i);
     expect((await (await call(deps({ store: none.store }))).json()).results[0].reason).toMatch(/sync/i);
     const f = fakeStore();
     const res = await (await call(deps({ store: f.store, run: async () => ({ ok: false, reason: "No job source answered, so nothing was recorded." }) }))).json();
@@ -297,5 +301,24 @@ describe("the server key stays on the server", () => {
   it("the cron secret is read only by the cron route", () => {
     const users = src.filter((f) => readFileSync(f, "utf8").includes("CRON_SECRET"));
     expect(users.map((f) => f.replace(/\\/g, "/").split("/src/")[1])).toEqual(["app/api/cron/daily/route.ts"]);
+  });
+});
+
+describe("morning plan, in full", () => {
+  it("prints the twelve role and city pairs it would search", () => {
+    const q = planQueries(DEFAULT_PREFERENCES, 12);
+    // Every role is searched in two different cities, and Ottawa (the usual home search) is included.
+    for (const role of DEFAULT_PREFERENCES.primaryRoles) expect(new Set(q.filter((x) => x.query === role).map((x) => x.location)).size).toBe(2);
+    expect(q.some((x) => x.location === "Ottawa, ON")).toBe(true);
+    expect(q.some((x) => x.location === "Toronto, ON")).toBe(false);
+  });
+  it("searches a single city once per role, not twice", () => {
+    expect(planQueries({ ...DEFAULT_PREFERENCES, locations: ["Ottawa, ON"] }, 12)).toHaveLength(6);
+  });
+});
+
+describe("one browser, two accounts", () => {
+  it("sync memory carries the account it belongs to", () => {
+    expect(NO_SYNC.userId).toBeNull();
   });
 });

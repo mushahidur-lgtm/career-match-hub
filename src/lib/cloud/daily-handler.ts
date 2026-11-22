@@ -9,7 +9,7 @@ import { isDue, torontoParts } from "./schedule";
 export interface DailyStore {
   findUsers(emails: string[]): Promise<{ id: string }[]>;
   hasRun(userId: string, date: string): Promise<boolean>;
-  loadData(userId: string): Promise<AppData | null>;
+  loadData(userId: string): Promise<{ ok: true; data: AppData } | { ok: false; reason: "missing" | "unreadable" }>;
   saveRun(userId: string, date: string, payload: DailyPayload): Promise<void>;
   pruneBefore(userId: string, date: string): Promise<void>;
 }
@@ -55,11 +55,12 @@ export async function handleDaily(req: Request, deps: DailyDeps): Promise<NextRe
         results.push({ status: "skipped", reason: done ? "Already ran today." : "Before 8:00 AM in Toronto." });
         continue;
       }
-      const data = await deps.store.loadData(user.id);
-      if (!data) {
-        results.push({ status: "skipped", reason: "No synced data yet. Turn on sync in the app first." });
+      const loaded = await deps.store.loadData(user.id);
+      if (!loaded.ok) {
+        results.push({ status: "skipped", reason: loaded.reason === "missing" ? "No synced data yet. Turn on sync in the app first." : "The synced copy could not be read, so nothing was searched. Open the app and sync again." });
         continue;
       }
+      const data = loaded.data;
       const resume = data.resumes.find((r) => r.id === data.activeResumeId) ?? data.resumes[0] ?? null;
       const outcome = await deps.run({ resume, preferences: data.preferences, maxQueries: deps.maxQueries, budgetMs: deps.budgetMs });
       if (!outcome.ok) {

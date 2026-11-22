@@ -36,14 +36,17 @@ export function supabaseStore(sb: SupabaseClient): DailyStore {
       const { data, error } = await sb.from("user_data").select("data").eq("user_id", userId).maybeSingle();
       if (error) throw new Error(error.message);
       const row = RowSchema.safeParse(data);
-      if (!row.success) return null;
+      if (!row.success || data === null) return { ok: false, reason: "missing" };
       const parsed = parseBackup(JSON.stringify(row.data.data));
-      return parsed.ok ? parsed.data : null;
+      return parsed.ok ? { ok: true, data: parsed.data } : { ok: false, reason: "unreadable" };
     },
     async saveRun(userId, date, payload: DailyPayload) {
-      // Upsert on the unique (user, date), so a forced re-run replaces the day's run and a race cannot make two.
-      const { error } = await sb.from("daily_runs").upsert({ user_id: userId, run_date: date, ran_at: new Date().toISOString(), payload }, { onConflict: "user_id,run_date" });
-      if (error) throw new Error(error.message);
+      // A forced re-run replaces the day's run with a new row, so browsers that already added the old one add this too.
+      const del = await sb.from("daily_runs").delete().eq("user_id", userId).eq("run_date", date);
+      if (del.error) throw new Error(del.error.message);
+      const { error } = await sb.from("daily_runs").insert({ user_id: userId, run_date: date, ran_at: new Date().toISOString(), payload });
+      // 23505: another call stored today's run a moment ago. The unique (user, date) means there is still just one.
+      if (error && error.code !== "23505") throw new Error(error.message);
     },
     async pruneBefore(userId, date) {
       const { error } = await sb.from("daily_runs").delete().eq("user_id", userId).lt("run_date", date);

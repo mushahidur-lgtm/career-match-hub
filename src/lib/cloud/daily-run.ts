@@ -19,6 +19,8 @@ export interface RunInput {
 
 export type RunOutcome = { ok: true; payload: DailyPayload } | { ok: false; reason: string };
 
+const MAX_JOBS_PER_RUN = 400;
+
 const safeLink = (u: string | null) => (u && /^https?:\/\//i.test(u) ? u.slice(0, 2000) : null);
 
 /**
@@ -79,7 +81,8 @@ export async function runDaily(
 
   if (!searches.length || !provider) return { ok: false, reason: "No job source answered, so nothing was recorded." };
 
-  const jobs = [...unique.values()];
+  // A run keeps at most this many distinct postings, best first, so one morning cannot flood the history.
+  const jobs = [...unique.values()].sort((a, b) => (b.match?.score ?? -1) - (a.match?.score ?? -1)).slice(0, MAX_JOBS_PER_RUN);
   const top: TopJob[] = jobs
     .filter((j) => j.match)
     .sort((a, b) => b.match!.score - a.match!.score)
@@ -96,6 +99,6 @@ export async function runDaily(
 
   return {
     ok: true,
-    payload: { provider, resumeName: input.resume?.name.slice(0, 120) ?? null, observations: jobs.slice(0, 1000).map(observe), searches, top, skipped },
+    payload: { provider, resumeName: input.resume?.name.slice(0, 120) ?? null, observations: jobs.map(observe), searches, top, skipped },
   };
 }

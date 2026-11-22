@@ -33,7 +33,7 @@ export function SearchHistory({ intel, onRun, onRemove, onClearSearches, onForge
       <div>
         <h1 className="font-display text-2xl font-bold tracking-tight">Search history</h1>
         <p className="mt-1 max-w-prose text-sm text-muted">
-          Every search you run is kept in this browser, with a compact note of each job it returned (no descriptions). This is what Career intelligence is counted from. Up to 200 searches and 800 jobs are kept; the oldest go first.
+          Every search you run is kept in this browser, with a compact note of each job it returned (no descriptions). This is what Career intelligence is counted from. Up to 500 searches and 1,500 jobs are kept; the oldest go first.
         </p>
       </div>
 

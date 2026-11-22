@@ -19,20 +19,32 @@ export function isDue(now: Date, alreadyRanToday: boolean, force = false): boole
   return !alreadyRanToday && torontoParts(now).hour >= RUN_HOUR;
 }
 
+/** Two cities that the job board searches identically ("Greater Toronto Area" is searched as Toronto) count once. */
+const searchKey = (place: string) => {
+  const first = place.split(",")[0].trim().toLowerCase();
+  return first === "greater toronto area" || first === "gta" ? "toronto" : first;
+};
+
 /**
- * The searches for one morning: your primary roles, in each of your first few cities, up to a cap on the number
- * of job-board calls. Cities earlier in your list in Settings are searched first.
+ * The searches for one morning, capped at `max` job-board calls. Each primary role is searched in a different
+ * selection of your cities, shifted from role to role, so every city is covered within the cap instead of only the
+ * first few. A city that would repeat another (Toronto next to the Greater Toronto Area) is searched once.
  */
 export function planQueries(prefs: Pick<SearchPreferences, "primaryRoles" | "locations" | "minSalary">, max: number): SearchFilters[] {
   const roles = prefs.primaryRoles.map((r) => r.trim()).filter(Boolean);
-  const places = prefs.locations.map((l) => l.trim()).filter(Boolean);
+  const seen = new Set<string>();
+  const places = prefs.locations
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .filter((l) => !seen.has(searchKey(l)) && seen.add(searchKey(l)));
   if (!roles.length || !places.length || max < 1) return [];
-  const perRole = Math.max(1, Math.floor(max / roles.length));
+  const rounds = Math.min(places.length, Math.max(1, Math.floor(max / roles.length)));
   const out: SearchFilters[] = [];
-  for (const query of roles) {
-    for (const location of places.slice(0, perRole)) {
+  for (let round = 0; round < rounds; round++) {
+    roles.forEach((query, r) => {
+      const location = places[(r + round) % places.length];
       out.push({ query, location, category: "All", workMode: "All", employmentType: "Permanent full-time", minSalary: prefs.minSalary });
-    }
+    });
   }
   return out.slice(0, max);
 }

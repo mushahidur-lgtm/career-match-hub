@@ -4,10 +4,10 @@ import { parseRequirements } from "@/lib/matching/requirements";
 import type { IntelStore, Job, ResumeVersion, SearchFilters, SearchRecord, SearchResponse, SeenJob } from "@/types/job";
 
 /** Browser storage is small, so old entries are dropped rather than the newest being refused. */
-export const HISTORY_MAX = 200;
-export const SEEN_MAX = 800;
-const REQUIRED_KEPT = 15;
-const PREFERRED_KEPT = 10;
+export const HISTORY_MAX = 500;
+export const SEEN_MAX = 1500;
+const REQUIRED_KEPT = 12;
+const PREFERRED_KEPT = 6;
 
 export const EMPTY_INTEL: IntelStore = { history: [], seen: [] };
 

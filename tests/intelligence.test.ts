@@ -262,14 +262,14 @@ describe("review fixes", () => {
       scored({ id: `j${i}`, title: `Senior Data Engineer ${i}`, company: `Company number ${i}`, location: "Ottawa, ON", description: `Requirements:\n${skills.join(", ")}\nNice to have:\nGo, Rust, Scala, Hive` }, 70),
     );
     let s = EMPTY_INTEL;
-    for (let k = 0; k < 4; k++) s = search(s, jobs.slice(k * 200, k * 200 + 200), at(1 + k));
+    for (let k = 0; k * 200 < SEEN_MAX; k++) s = search(s, jobs.slice(k * 200, k * 200 + 200), at(1 + k));
     for (let k = 0; k < 200; k++) s = search(s, [], at(10, k % 24));
     const bytes = JSON.stringify(s).length;
     expect(s.seen).toHaveLength(SEEN_MAX);
-    expect(bytes).toBeLessThan(650_000);
+    expect(bytes).toBeLessThan(1_300_000);
     const half = shrinkIntel(s)!;
     expect(half.seen).toHaveLength(SEEN_MAX / 2);
-    expect(half.history).toHaveLength(100);
+    expect(half.history).toHaveLength(Math.floor(s.history.length / 2));
     expect(shrinkIntel({ history: [], seen: [] })).toBeNull();
   });
 

@@ -15,9 +15,11 @@ export interface SyncMemory {
   lastHash: string | null;
   /** Daily runs already added to the history here, so none is counted twice. */
   importedRuns: string[];
+  /** Whose copy this memory is about. A different account signing in here starts from scratch. */
+  userId: string | null;
 }
 
-export const NO_SYNC: SyncMemory = { enabled: false, lastVersion: 0, lastHash: null, importedRuns: [] };
+export const NO_SYNC: SyncMemory = { enabled: false, lastVersion: 0, lastHash: null, importedRuns: [], userId: null };
 
 export type SyncAction =
   /** Nothing to do. */

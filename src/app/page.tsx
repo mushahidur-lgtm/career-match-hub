@@ -240,7 +240,9 @@ export default function Home() {
     [resumes, active, preferences, saved, intel],
   );
   // Data arriving from the cloud. It never touches your search filters or your current results.
+  const [cloudEpoch, setCloudEpoch] = useState(0);
   const applyCloud = (d: AppData) => {
+    setCloudEpoch((n) => n + 1);
     setResumes(d.resumes);
     setActiveId((cur) => {
       const has = (id: string | null | undefined) => Boolean(id && d.resumes.some((r) => r.id === id));
@@ -459,7 +461,7 @@ export default function Home() {
         ) : tab === "interviews" ? (
           <InterviewTracker items={saved} onOpen={openApplication} onGoApplications={() => setTab("applications")} />
         ) : tab === "settings" ? (
-          <SettingsPanel data={appData} recovered={recovered} onSavePreferences={savePreferences} onImport={importData} account={<AccountPanel cloud={cloud} />} />
+          <SettingsPanel key={cloudEpoch} data={appData} recovered={recovered} onSavePreferences={savePreferences} onImport={importData} account={<AccountPanel cloud={cloud} />} />
         ) : (
           <ApplicationsPage items={saved} reminders={reminders} onOpen={openApplication} onMove={moveApp} onAdd={() => setAdding(true)} onExport={exportApplications} onGoDiscover={() => setTab("discover")} />
         )}

@@ -16,6 +16,7 @@ const MemorySchema = z.object({
   lastVersion: z.number().int().min(0),
   lastHash: z.string().max(100).nullable(),
   importedRuns: z.array(z.string().max(80)).max(200),
+  userId: z.string().max(80).nullable().default(null),
 });
 
 export type CloudStatus = "idle" | "syncing" | "error" | "gone";
@@ -128,14 +129,16 @@ export function useCloud({ data, apply, updateIntel, intel }: Options): CloudApi
   }, [sb]);
 
   const busy = useRef(false);
+  const syncAgain = useRef<(() => void) | null>(null);
 
   const syncNow = useCallback(async () => {
     const u = userRef.current;
-    if (!sb || !u || busy.current || !memoryRef.current.enabled) return;
+    if (!sb || !u || busy.current || !memoryRef.current.enabled || memoryRef.current.userId !== u.id) return;
     busy.current = true;
     setStatus("syncing");
     setMessage(null);
     try {
+      let done = false;
       for (let attempt = 0; attempt < 3; attempt++) {
         const mem = memoryRef.current;
         const local = dataRef.current;
@@ -143,7 +146,10 @@ export function useCloud({ data, apply, updateIntel, intel }: Options): CloudApi
         const hash = hashData(local);
         const action = planSync({ cloudVersion: row?.version ?? null, memory: mem, localHash: hash, localEmpty: isEmptyData(local) });
 
-        if (action === "none") break;
+        if (action === "none") {
+          done = true;
+          break;
+        }
         if (action === "gone") {
           setStatus("gone");
           setMessage("Your cloud copy was deleted, perhaps from another device. Nothing was sent. You can upload this device's data again, or turn sync off.");
@@ -158,9 +164,13 @@ export function useCloud({ data, apply, updateIntel, intel }: Options): CloudApi
             setMessage(cloud.error);
             return;
           }
+          // Something may have been edited while the cloud copy was being fetched. Replacing the data now would lose
+          // that edit, so look again: with the edit in place this becomes a combine.
+          if (hashData(dataRef.current) !== hash) continue;
           if (action === "pull") {
             applyRef.current(cloud.data);
             commit({ ...mem, lastVersion: row!.version, lastHash: hashData(cloud.data) });
+            done = true;
             break;
           }
           // Both copies changed. Keep a copy of this device's data first, then combine without losing either.
@@ -176,6 +186,7 @@ export function useCloud({ data, apply, updateIntel, intel }: Options): CloudApi
         const res = await pushRow(sb, u.id, JSON.parse(buildBackup(toPush)), row?.version ?? 0);
         if (res.ok) {
           commit({ ...mem, lastVersion: res.version, lastHash: hashData(toPush) });
+          done = true;
           break;
         }
         if (attempt === 2) {
@@ -183,6 +194,13 @@ export function useCloud({ data, apply, updateIntel, intel }: Options): CloudApi
           setMessage("Another device saved at the same moment. Nothing was lost. Try again in a minute.");
           return;
         }
+      }
+      if (!done) {
+        // Edits kept arriving during the check. Nothing was lost; it is tried again shortly.
+        setStatus("idle");
+        setMessage("Your data changed while syncing, so it will be checked again in a moment.");
+        setTimeout(() => syncAgain.current?.(), 2000);
+        return;
       }
       setLastSyncedAt(new Date().toISOString());
       setStatus("idle");
@@ -197,7 +215,7 @@ export function useCloud({ data, apply, updateIntel, intel }: Options): CloudApi
   // The morning run's results. Adding one is idempotent, so a run is never counted twice.
   const importRuns = useCallback(async () => {
     const u = userRef.current;
-    if (!sb || !u) return;
+    if (!sb || !u || memoryRef.current.userId !== u.id) return;
     try {
       const rows = (await fetchRuns(sb)).sort((a, b) => a.ran_at.localeCompare(b.ran_at));
       const readable = rows.flatMap((r) => {
@@ -221,8 +239,27 @@ export function useCloud({ data, apply, updateIntel, intel }: Options): CloudApi
     }
   }, [sb, commit]);
 
+  useEffect(() => {
+    syncAgain.current = () => void syncNow();
+  }, [syncNow]);
+
   const userId = user?.id ?? null;
   const enabled = memory.enabled;
+
+  // Another account signing in on this browser must never be handed the first account's sync state:
+  // its cloud copy could otherwise replace this device's data. It starts from scratch, with sync off.
+  useEffect(() => {
+    if (!hydrated || !userId || memoryRef.current.userId === userId) return;
+    const previous = memoryRef.current.userId;
+    setStatus("idle");
+    if (previous === null) {
+      // The first sign-in on this browser claims the sync state.
+      commit({ ...memoryRef.current, userId });
+      return;
+    }
+    commit({ ...NO_SYNC, userId });
+    setMessage("A different account signed in here, so sync was turned off. Turn it on again if you want that account's copy combined with this device.");
+  }, [hydrated, userId, commit]);
 
   // Sync shortly after a change, and again whenever you come back to the tab.
   useEffect(() => {
@@ -292,7 +329,7 @@ export function useCloud({ data, apply, updateIntel, intel }: Options): CloudApi
       if (!sb || !u) return;
       try {
         await deleteCloud(sb, u.id);
-        commit({ enabled: false, lastVersion: 0, lastHash: null, importedRuns: [] });
+        commit({ ...NO_SYNC, userId: u.id });
         setLatestRun(null);
         setStatus("idle");
         setMessage("Your cloud copy and daily runs were deleted. This device's data is unchanged, and sync is off.");
