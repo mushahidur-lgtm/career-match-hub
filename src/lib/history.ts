@@ -26,13 +26,13 @@ export function statedPay(job: Pick<Job, "salary">): { lo: number; hi: number } 
   return { lo: Math.min(a, b), hi: Math.max(a, b) };
 }
 
-function toSeen(job: Job, at: string, previous?: SeenJob): SeenJob {
+/** What one search saw of a posting. Small enough to store in a daily run and replay later. */
+export type Observation = Omit<SeenJob, "firstSeenAt" | "lastSeenAt" | "seenCount">;
+
+export function observe(job: Job): Observation {
   const req = parseRequirements(job.title, job.description);
   return {
     key: jobKey(job),
-    firstSeenAt: previous?.firstSeenAt ?? at,
-    lastSeenAt: at,
-    seenCount: (previous?.seenCount ?? 0) + 1,
     title: job.title.slice(0, 200),
     company: job.company.slice(0, 200),
     location: job.location.slice(0, 200),
@@ -60,29 +60,46 @@ export function recordSearch(
   input: { at: string; filters: SearchFilters; response: Pick<SearchResponse, "jobs" | "provider" | "scoring">; resume: Pick<ResumeVersion, "name"> | null },
 ): IntelStore {
   const { at, filters, response, resume } = input;
-  if (response.provider === "none") return store;
+  return recordObservations(store, { at, filters, provider: response.provider, scoring: response.scoring, resumeName: resume?.name ?? null, observations: response.jobs.map(observe) });
+}
+
+/**
+ * The same as recordSearch, from observations already taken. The daily run uses this: the server
+ * takes the observations, and your browser replays them. A given `id` makes a replay idempotent,
+ * because a search already in the history under that id is left alone.
+ */
+export function recordObservations(
+  store: IntelStore,
+  input: { id?: string; at: string; filters: SearchFilters; provider: SearchRecord["provider"]; scoring: SearchRecord["scoring"]; resumeName: string | null; observations: Observation[] },
+): IntelStore {
+  const { at, filters, provider, observations } = input;
+  if (provider === "none") return store;
+  if (input.id && store.history.some((h) => h.id === input.id)) return store;
 
   const index = new Map(store.seen.map((s) => [s.key, s]));
   let fresh = 0;
   const thisSearch = new Set<string>();
-  for (const job of response.jobs) {
-    const key = jobKey(job);
+  for (const o of observations) {
     // A posting listed twice in one search still counts once.
-    if (thisSearch.has(key)) continue;
-    thisSearch.add(key);
-    const previous = index.get(key);
+    if (thisSearch.has(o.key)) continue;
+    thisSearch.add(o.key);
+    const previous = index.get(o.key);
     if (!previous) fresh += 1;
-    index.set(key, toSeen(job, at, previous));
+    // A search replayed out of order must not move a job's first sighting later, or its latest one earlier.
+    const firstSeenAt = previous && previous.firstSeenAt < at ? previous.firstSeenAt : at;
+    const lastSeenAt = previous && previous.lastSeenAt > at ? previous.lastSeenAt : at;
+    const latest = lastSeenAt === at ? o : previous!;
+    index.set(o.key, { ...latest, key: o.key, firstSeenAt, lastSeenAt, seenCount: (previous?.seenCount ?? 0) + 1 });
   }
 
-  const scores = response.jobs.flatMap((j) => (j.match ? [j.match.score] : []));
+  const scores = observations.flatMap((o, i) => (observations.findIndex((x) => x.key === o.key) === i && o.score !== null ? [o.score] : []));
   const record: SearchRecord = {
-    id: newId(),
+    id: input.id ?? newId(),
     at,
     filters,
-    provider: response.provider,
-    scoring: response.scoring,
-    resumeName: resume ? resume.name.slice(0, 120) : null,
+    provider,
+    scoring: input.scoring,
+    resumeName: input.resumeName ? input.resumeName.slice(0, 120) : null,
     resultCount: thisSearch.size,
     newCount: fresh,
     avgScore: scores.length ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : null,
@@ -90,7 +107,8 @@ export function recordSearch(
   };
 
   const seen = [...index.values()].sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt)).slice(0, SEEN_MAX);
-  return { history: [record, ...store.history].slice(0, HISTORY_MAX), seen };
+  const history = [record, ...store.history].sort((a, b) => b.at.localeCompare(a.at)).slice(0, HISTORY_MAX);
+  return { history, seen };
 }
 
 export const removeSearch = (store: IntelStore, id: string): IntelStore => ({ ...store, history: store.history.filter((h) => h.id !== id) });
