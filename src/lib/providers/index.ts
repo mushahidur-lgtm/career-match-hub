@@ -4,6 +4,7 @@ import type { Job, ProviderStatus, SearchFilters } from "@/types/job";
 import { adzunaConfigured, searchAdzuna } from "./adzuna";
 import { ProviderError, dedupeJobs } from "./common";
 import { demoJobs } from "./demo";
+import { providerHealth, recordProvider, type ProviderHealth } from "./health";
 import { jsearchConfigured, searchJSearch } from "./jsearch";
 
 /** One job source. Add a source by adding an entry to PROVIDERS. Only official APIs belong here. */
@@ -38,7 +39,19 @@ export function configuredProvider(): ProviderStatus {
   return PROVIDERS.find((p) => p.configured())?.id ?? (demoEnabled() ? "demo" : "none");
 }
 
+export interface ProviderReport {
+  id: "adzuna" | "jsearch";
+  status: "ok" | "failed";
+  /** Listings it returned, before duplicates were merged. */
+  count: number;
+  message?: string;
+}
+
+export const currentHealth = (): ProviderHealth[] => providerHealth({ adzuna: adzunaConfigured(), jsearch: jsearchConfigured() });
+
 export interface ProviderResult {
+  /** What each source that was asked did. */
+  sources?: ProviderReport[];
   jobs: Job[];
   /** The source of the results. In "all" mode, the first source that answered. */
   provider: ProviderStatus;
@@ -54,12 +67,18 @@ export function annotate(jobs: Job[], now = new Date()): Job[] {
   });
 }
 
-async function attempt(p: JobSearchProvider, filters: SearchFilters, warnings: string[]): Promise<Job[] | null> {
+async function attempt(p: JobSearchProvider, filters: SearchFilters, warnings: string[], sources: ProviderReport[]): Promise<Job[] | null> {
   try {
-    return await p.search(filters);
+    const jobs = await p.search(filters);
+    recordProvider(p.id);
+    sources.push({ id: p.id, status: "ok", count: jobs.length });
+    return jobs;
   } catch (err) {
     console.error(`${p.name} search failed:`, err instanceof Error ? err.message : err);
-    warnings.push(err instanceof ProviderError ? err.message : `${p.name} search failed.`);
+    const message = err instanceof ProviderError ? err.message : `${p.name} search failed.`;
+    recordProvider(p.id, err instanceof ProviderError ? err.failure : "bad_response");
+    sources.push({ id: p.id, status: "failed", count: 0, message });
+    warnings.push(message);
     return null;
   }
 }
@@ -68,28 +87,29 @@ async function attempt(p: JobSearchProvider, filters: SearchFilters, warnings: s
 export async function fetchJobs(filters: SearchFilters): Promise<ProviderResult> {
   const warnings: string[] = [];
   const active = PROVIDERS.filter((p) => p.configured());
+  const sources: ProviderReport[] = [];
 
   if (providerMode() === "all" && active.length > 1) {
-    const found = await Promise.all(active.map(async (p) => ({ p, jobs: await attempt(p, filters, warnings) })));
+    const found = await Promise.all(active.map(async (p) => ({ p, jobs: await attempt(p, filters, warnings, sources) })));
     const answered = found.filter((f) => f.jobs !== null);
     if (answered.length) {
       // One source failing still returns what the others found, with the failure named.
-      return { jobs: annotate(dedupeJobs(answered.flatMap((f) => f.jobs!))), provider: answered[0].p.id, warnings };
+      return { jobs: annotate(dedupeJobs(answered.flatMap((f) => f.jobs!))), provider: answered[0].p.id, warnings, sources };
     }
   } else {
     for (const p of active) {
-      const jobs = await attempt(p, filters, warnings);
-      if (jobs) return { jobs: annotate(dedupeJobs(jobs)), provider: p.id, warnings };
+      const jobs = await attempt(p, filters, warnings, sources);
+      if (jobs) return { jobs: annotate(dedupeJobs(jobs)), provider: p.id, warnings, sources };
     }
   }
 
   if (demoEnabled()) {
     if (active.length) warnings.push("Showing sample listings because the live search failed.");
-    return { jobs: annotate(demoJobs(filters)), provider: "demo", warnings };
+    return { jobs: annotate(demoJobs(filters)), provider: "demo", warnings, ...(sources.length ? { sources } : {}) };
   }
   if (active.length) {
     warnings.push("No jobs were returned because the live search failed. Try again in a minute.");
-    return { jobs: [], provider: active[active.length - 1].id, warnings };
+    return { jobs: [], provider: active[active.length - 1].id, warnings, sources };
   }
   return { jobs: [], provider: "none", warnings };
 }

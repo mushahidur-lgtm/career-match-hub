@@ -36,6 +36,12 @@ export interface RefineFilters {
   company: string;
   title: string;
   status: "All" | "Not tracked" | ApplicationStatus;
+  /** "strong": the engine's strong matches. */
+  strongOnly: boolean;
+  verifiedOnly: boolean;
+  eligibility: "All" | "eligible" | "needs_verification" | "not_applicable";
+  requiredSkills: "All" | "none_missing" | "some_missing";
+  transitionOnly: boolean;
 }
 
 export const DEFAULT_REFINE: RefineFilters = {
@@ -53,6 +59,11 @@ export const DEFAULT_REFINE: RefineFilters = {
   company: "",
   title: "",
   status: "All",
+  strongOnly: false,
+  verifiedOnly: false,
+  eligibility: "All",
+  requiredSkills: "All",
+  transitionOnly: false,
 };
 
 export const RefineSchema = z.object({
@@ -71,6 +82,12 @@ export const RefineSchema = z.object({
   title: z.string().max(100),
   // Filters saved before the pipeline grew may hold an old status name.
   status: z.preprocess(legacyStatus, z.enum(["All", "Not tracked", ...APPLICATION_STATUSES])),
+  // Filters saved before these existed read as off.
+  strongOnly: z.boolean().default(false),
+  verifiedOnly: z.boolean().default(false),
+  eligibility: z.enum(["All", "eligible", "needs_verification", "not_applicable"]).default("All"),
+  requiredSkills: z.enum(["All", "none_missing", "some_missing"]).default("All"),
+  transitionOnly: z.boolean().default(false),
 });
 
 export interface RefineContext {
@@ -112,6 +129,20 @@ export function refineJobs(jobs: Job[], f: RefineFilters, ctx: RefineContext): J
     }
     // "hideStale" keeps its name so saved filters still load. It now hides every posting that is likely closed.
     if (f.hideStale && likelyClosed(job, now).closed) return false;
+
+    if (f.strongOnly && job.match?.recommendedAction !== "strong_match") return false;
+    if (f.verifiedOnly && job.verification?.state !== "verified_active") return false;
+    if (f.eligibility !== "All" && job.match?.eligibility?.status !== f.eligibility) return false;
+    if (f.requiredSkills !== "All") {
+      const detail = job.match?.detail;
+      // A job whose required skills could not be read is neither complete nor missing some.
+      const required = detail?.skillEvidence?.filter((s) => s.importance === "required") ?? [];
+      if (!detail || !required.length) return false;
+      // A skill only covered by a related one still counts as missing.
+      const missing = required.some((s) => !detail.requiredMatched.includes(s.skill));
+      if (missing === (f.requiredSkills === "none_missing")) return false;
+    }
+    if (f.transitionOnly && job.match?.detail?.careerAlignment?.relation !== "transition") return false;
 
     if (!has(job.company, f.company)) return false;
     if (!has(job.title, f.title)) return false;

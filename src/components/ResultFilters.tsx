@@ -115,6 +115,25 @@ export function ResultFilters({ value, onChange, total, shown, closedCount = 0 }
               ]),
             )}
             {field(
+              "Eligibility",
+              `${uid}-elig`,
+              select(`${uid}-elig`, value.eligibility, (v) => set("eligibility", v as RefineFilters["eligibility"]), [
+                { value: "All", label: "Any" },
+                { value: "eligible", label: "Eligible" },
+                { value: "needs_verification", label: "Needs verification" },
+                { value: "not_applicable", label: "No condition found" },
+              ]),
+            )}
+            {field(
+              "Required skills",
+              `${uid}-req`,
+              select(`${uid}-req`, value.requiredSkills, (v) => set("requiredSkills", v as RefineFilters["requiredSkills"]), [
+                { value: "All", label: "Any" },
+                { value: "none_missing", label: "None missing" },
+                { value: "some_missing", label: "Some missing" },
+              ]),
+            )}
+            {field(
               "Seniority",
               `${uid}-level`,
               select(`${uid}-level`, value.seniority, (v) => set("seniority", v as RefineFilters["seniority"]), [{ value: "All", label: "Any level" }, ...LEVEL_BUCKETS.map((l) => ({ value: l, label: l }))]),
@@ -149,6 +168,18 @@ export function ResultFilters({ value, onChange, total, shown, closedCount = 0 }
             )}
           </div>
           <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+            {(
+              [
+                ["strongOnly", "Strong matches only"],
+                ["verifiedOnly", "Verified active only (check a posting to verify it)"],
+                ["transitionOnly", "Career transition opportunities"],
+              ] as const
+            ).map(([key, label]) => (
+              <label key={key} className="inline-flex items-center gap-2">
+                <input type="checkbox" checked={value[key]} onChange={(e) => set(key, e.target.checked)} className="size-4 accent-[var(--brand)]" />
+                {label}
+              </label>
+            ))}
             <label className="inline-flex items-center gap-2">
               <input type="checkbox" checked={value.includeUnknownSalary} onChange={(e) => set("includeUnknownSalary", e.target.checked)} className="size-4 accent-[var(--brand)]" />
               Keep jobs with no stated salary

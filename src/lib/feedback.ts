@@ -32,6 +32,9 @@ export const FeedbackEventSchema = z.object({
   score: z.number().min(0).max(100).nullable(),
   /** For corrections: which skill or which gate was wrong. */
   detail: z.string().max(200).optional(),
+  /* Added later; older events do not have them. */
+  category: z.string().max(60).optional(),
+  missing: z.array(z.string().max(120)).max(8).optional(),
 });
 export type FeedbackEvent = z.infer<typeof FeedbackEventSchema>;
 
@@ -46,7 +49,7 @@ export function readFeedback(value: unknown): FeedbackEvent[] | undefined {
   }).slice(-MAX_FEEDBACK);
 }
 
-type FeedbackJob = Pick<Job, "id" | "title" | "company" | "location" | "match">;
+type FeedbackJob = Pick<Job, "id" | "title" | "company" | "location" | "match"> & Partial<Pick<Job, "category">>;
 
 export function recordFeedback(list: FeedbackEvent[], type: FeedbackType, job: FeedbackJob, detail?: string, now = new Date()): FeedbackEvent[] {
   const key = jobKey(job);
@@ -62,6 +65,8 @@ export function recordFeedback(list: FeedbackEvent[], type: FeedbackType, job: F
     company: job.company.slice(0, 200),
     score: job.match?.score ?? null,
     ...(detail ? { detail: detail.slice(0, 200) } : {}),
+    ...(job.category ? { category: job.category } : {}),
+    ...(job.match?.detail ? { missing: job.match.detail.requiredMissing.slice(0, 8).map((s) => s.slice(0, 120)) } : {}),
   };
   return [...list, event].slice(-MAX_FEEDBACK);
 }

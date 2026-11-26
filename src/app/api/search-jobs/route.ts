@@ -53,7 +53,7 @@ export async function POST(req: Request) {
   if (!parsed.success) return badRequest("The search filters were not valid.");
   const { filters, profile, resumeText, preferences } = parsed.data;
 
-  const { jobs: found, provider, warnings } = await fetchJobs(filters);
+  const { jobs: found, provider, warnings, sources } = await fetchJobs(filters);
   const kept = applyFilters(found, filters);
 
   const input = profile ? toMatchInput(profile, resumeText ?? null, preferences) : null;
@@ -101,6 +101,7 @@ export async function POST(req: Request) {
     warnings,
     ...(excluded.length ? { excluded: excluded.map(notReviewed) } : {}),
     ...(ai ? { ai } : {}),
+    ...(sources?.length ? { sources } : {}),
   };
   return NextResponse.json(body);
 }

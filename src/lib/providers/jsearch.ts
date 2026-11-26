@@ -6,6 +6,7 @@ import {
   inferEmploymentType,
   inferWorkMode,
   isRemoteLocation,
+  settleSome,
   stripHtml,
 } from "./common";
 
@@ -117,5 +118,17 @@ export async function searchJSearch(f: SearchFilters): Promise<Job[]> {
     return list.filter((j) => j?.job_id && j.job_title).map(normalize);
   });
 
-  return (await Promise.all(runs)).flat();
+  return settleSome(runs);
+}
+
+/** The full text of one posting from JSearch's own detail endpoint, or null when it has none. */
+export async function jsearchDetails(jobId: string): Promise<string | null> {
+  const params = new URLSearchParams({ job_id: jobId });
+  const data = await fetchJson<{ data?: JSearchJob[] }>(
+    `https://jsearch.p.rapidapi.com/job-details?${params}`,
+    { headers: { "X-RapidAPI-Key": process.env.RAPIDAPI_KEY!.trim(), "X-RapidAPI-Host": "jsearch.p.rapidapi.com" } },
+    "JSearch",
+  );
+  const found = Array.isArray(data.data) ? data.data[0] : undefined;
+  return found?.job_description ? stripHtml(found.job_description) : null;
 }

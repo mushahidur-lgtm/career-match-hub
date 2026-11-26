@@ -82,6 +82,7 @@ export function buildCandidateIntelligence(
       languages: facts?.languages ?? [],
       clearance: facts?.clearance ?? null,
       exclusions: facts?.exclusions ?? [],
+      qualificationsComplete: facts?.qualificationsComplete ?? false,
     },
     completeness: parts.filter(Boolean).length / parts.length,
   };

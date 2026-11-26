@@ -7,7 +7,7 @@ import type { Job, SavedJob } from "@/types/job";
 import { useContacts } from "./contacts/context";
 import { useFeedback } from "./feedback-context";
 import { JobDetailDialog, type DetailTab } from "./JobDetailDialog";
-import { MatchBadges } from "./match-v2";
+import { MatchBadges, PostingBadges } from "./match-v2";
 import { ConfidenceBadge, FreshnessBadge, JobQualityLine, SaveControl, modeTone, safeUrl, typeLabel, typeTone, type JobActions } from "./job-parts";
 import { Badge, ScoreBadge, secondaryButton } from "./ui";
 
@@ -58,6 +58,7 @@ export function JobCard({ job, saved, onSave, onStatus, onRemove }: Props) {
         <FreshnessBadge postedAt={job.postedAt} />
         {job.match?.detail && <ConfidenceBadge confidence={job.match.detail.confidence} />}
         {job.match && <MatchBadges match={job.match} />}
+        <PostingBadges job={job} />
         {saved && <Badge tone="brand">{saved.status}</Badge>}
       </div>
 

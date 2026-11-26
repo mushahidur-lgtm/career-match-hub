@@ -8,9 +8,18 @@ import type {
 } from "@/types/job";
 
 import { mergeDuplicates } from "@/lib/dedupe";
+import { stripTags } from "@/lib/html";
+import type { ProviderFailure } from "./health";
 import { yearlySalary } from "@/lib/format";
 
-export class ProviderError extends Error {}
+export class ProviderError extends Error {
+  constructor(
+    message: string,
+    public readonly failure: ProviderFailure = "unreachable",
+  ) {
+    super(message);
+  }
+}
 
 export const CA_PROVINCES = ["AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU", "ON", "PE", "QC", "SK", "YT"];
 const US_STATES =
@@ -30,38 +39,21 @@ export function countriesFor(location: string): ("ca" | "us")[] {
 
 export const cityOf = (location: string) => location.split(",")[0].trim();
 
-/** Replaces until nothing changes, because removing one match can join the pieces of another. */
-function removeAll(text: string, pattern: RegExp): string {
-  let out = text;
-  let before: string;
-  do {
-    before = out;
-    out = out.replace(pattern, "");
-  } while (out !== before);
-  return out;
-}
-
 const ENTITIES: Record<string, string> = { "&nbsp;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&apos;": "'" };
 
 export function stripHtml(html: string): string {
-  // Comments and script or style blocks are never visible to a reader, so their text is not part of the posting.
-  const visible = removeAll(html, /<!--[\s\S]*?(?:-->|$)|<(script|style|noscript|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi)
-    .replace(/<\s*(?:br|\/p|\/li|\/div|\/h\d)\s*\/?>/gi, "\n")
-    .replace(/<li[^>]*>/gi, "• ");
-  // Whole tags go; a tag that is never closed loses its angle bracket. A "<" in ordinary text, as in "< 5", stays.
-  return (
-    removeAll(visible, /<[^>]+>|<(?=[a-zA-Z!/?])/g)
-      // One pass, so "&amp;lt;" reads as the text "&lt;" and is not decoded twice.
-      .replace(/&(?:nbsp|amp|lt|gt|quot|apos|#39);/g, (entity) => ENTITIES[entity])
-      .replace(/\n{3,}/g, "\n\n")
-      .trim()
-  );
+  // One pass, so "&amp;lt;" reads as the text "&lt;" and is not decoded twice.
+  return stripTags(html)
+    .replace(/&(?:nbsp|amp|lt|gt|quot|apos|#39);/g, (entity) => ENTITIES[entity])
+    .trim();
 }
 
 export function inferWorkMode(title: string, description: string, remoteFlag?: boolean): WorkMode {
   const text = `${title}\n${description}`;
   if (/\bhybrid\b/i.test(text)) return "Hybrid";
-  if (remoteFlag || /\bremote\b|work from home|work-from-home|telecommut|\bWFH\b/i.test(text)) return "Remote";
+  const notRemote = /\b(?:not|no)\b[^.\n]{0,20}\b(?:a )?(?:fully )?remote\b|\bremote (?:work )?is not\b|\bno (?:remote|work[- ]from[- ]home)\b/i;
+  const remoteText = text.replace(new RegExp(notRemote, "gi"), " ");
+  if (remoteFlag || /\bremote\b|work from home|work-from-home|telecommut|\bWFH\b/i.test(remoteText)) return "Remote";
   if (/\bon-?site\b|in[- ]office|in[- ]person/i.test(text)) return "On-site";
   return "Not stated";
 }
@@ -121,21 +113,48 @@ export function applyFilters(jobs: Job[], f: SearchFilters): Job[] {
   });
 }
 
-export async function fetchJson<T>(url: string, init: RequestInit = {}, label: string): Promise<T> {
-  let res: Response;
+/** Two short attempts keep a search inside the route's time limit alongside the AI review. */
+const PROVIDER_TIMEOUT_MS = 10_000;
+const RETRY_DELAY_MS = 400;
+
+async function once(url: string, init: RequestInit, label: string): Promise<Response> {
   try {
-    res = await fetch(url, { ...init, cache: "no-store", signal: AbortSignal.timeout(15_000) });
-  } catch {
-    throw new ProviderError(`${label} could not be reached.`);
+    return await fetch(url, { ...init, cache: "no-store", signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS) });
+  } catch (err) {
+    const timedOut = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+    throw new ProviderError(`${label} ${timedOut ? "did not answer in time" : "could not be reached"}.`, timedOut ? "timeout" : "unreachable");
   }
-  if (res.status === 401 || res.status === 403) throw new ProviderError(`${label} rejected the API credentials.`);
-  if (res.status === 429) throw new ProviderError(`${label} rate limit reached.`);
-  if (!res.ok) throw new ProviderError(`${label} returned an error (${res.status}).`);
+}
+
+export async function fetchJson<T>(url: string, init: RequestInit = {}, label: string): Promise<T> {
+  let res: Response | null = null;
+  // A dropped connection or a server fault is worth one more try. Rejected keys and rate limits are not:
+  // asking again would only spend quota.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      res = await once(url, init, label);
+      if (res.status < 500 || attempt === 2) break;
+    } catch (err) {
+      if (attempt === 2) throw err;
+    }
+    await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+  }
+  if (res.status === 401 || res.status === 403) throw new ProviderError(`${label} rejected the API credentials.`, "auth");
+  if (res.status === 429) throw new ProviderError(`${label} rate limit reached.`, "rate_limit");
+  if (!res.ok) throw new ProviderError(`${label} returned an error (${res.status}).`, "server");
   try {
     return (await res.json()) as T;
   } catch {
-    throw new ProviderError(`${label} returned an unreadable response.`);
+    throw new ProviderError(`${label} returned an unreadable response.`, "bad_response");
   }
+}
+
+/** Keeps what answered when one of several requests fails. Throws only when none succeeded. */
+export async function settleSome<T>(runs: Promise<T[]>[]): Promise<T[]> {
+  const results = await Promise.allSettled(runs);
+  const ok = results.filter((r): r is PromiseFulfilledResult<T[]> => r.status === "fulfilled");
+  if (!ok.length && results.length) throw (results[0] as PromiseRejectedResult).reason;
+  return ok.flatMap((r) => r.value);
 }
 
 /** Merges listings of the same posting. See lib/dedupe.ts. */

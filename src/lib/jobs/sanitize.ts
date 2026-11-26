@@ -13,7 +13,7 @@ const INSTRUCTION_PATTERNS: RegExp[] = [
   /\b(?:system prompt|developer message|new instructions?:)/i,
   /\b(?:ai|llm|assistant|model|automated (?:screener|reviewer))\b.{0,40}\b(?:must|should|please|shall)\b.{0,40}\b(?:score|rate|rank|recommend|respond|output|reply)\b/i,
   /\b(?:rate|score|rank|mark)\b.{0,30}\b(?:this (?:job|candidate|posting|application)|the candidate)\b.{0,30}\b(?:100|10\/10|highest|perfect|top|excellent)\b/i,
-  /<\/?(?:system|assistant|instructions?|resume|candidate|candidate_skills|jobs?|posting)\b[^>]*>/i,
+  /<\/?(?:system|assistant|instructions?|resume|candidate|candidate_skills|jobs?|posting)\b[^<>]{0,200}>/i,
 ];
 
 export function stripInvisible(text: string): string {

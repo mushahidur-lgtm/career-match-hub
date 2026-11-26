@@ -38,7 +38,7 @@ export interface MatchInput {
   /** The resume text. Evidence quotes are copied from it, and it is the source for responsibilities. */
   resumeText?: string | null;
   /** `roles` are the jobs the candidate is aiming for. A target role is not held back for differing from past titles. */
-  preferences?: { locations: string[]; minSalary: number | null; roles?: string[]; primaryRoles?: string[]; secondaryRoles?: string[] };
+  preferences?: { locations: string[]; minSalary: number | null; roles?: string[]; primaryRoles?: string[]; secondaryRoles?: string[]; transitionRoles?: string[]; excludedRoles?: string[] };
   weights?: Partial<MatchWeights>;
   /** Work authorization, languages, clearance and exclusions, only as the candidate stated them. */
   facts?: CandidateFacts;
@@ -205,7 +205,14 @@ export function scoreJob(job: MatchableJob, input: MatchInput, ai?: AiAssessment
   const postingStatus =
     job.postingStatus ??
     assessPosting({ description: job.description, descriptionTruncated: job.descriptionTruncated, postedAt: job.postedAt ?? null, source: job.source ?? "adzuna", applyUrl: job.applyUrl ?? null }, new Date(0)).status;
-  const eligibility = checkEligibility(job.title, description, facts);
+  const eligibility = checkEligibility(job.title, description, facts, {
+    education: profile.education ?? [],
+    certifications: [
+      ...(profile.certificationDetails ?? []),
+      ...(profile.certifications ?? []).filter((n) => !(profile.certificationDetails ?? []).some((d) => d.name.toLowerCase() === n.toLowerCase())).map((name) => ({ name })),
+    ],
+    yearsOfExperience: profile.yearsOfExperience,
+  });
 
   const mine = profileSkills(profile.skills);
   const mineSet = new Set(mine.map((s) => s.toLowerCase()));
@@ -412,6 +419,7 @@ export function scoreJob(job: MatchableJob, input: MatchInput, ai?: AiAssessment
   else if (seniorityGap <= -2) caps.push({ limit: 65, reason: "the role is well below your level" });
   if (location.status === "no") caps.push({ limit: 69, reason: "the job is outside your preferred cities" });
   if (career.excludedTerm) caps.push({ limit: 50, reason: `it mentions "${career.excludedTerm}", which you excluded` });
+  if (career.excludedRole) caps.push({ limit: 50, reason: `it is a "${career.excludedRole}" role, which you excluded` });
   // Decided from the posting alone. Confidence also counts the AI review and posting status, which must never move a score.
   const thinPosting = description.length < 200 || (description.length < 500 && (job.descriptionTruncated || !req.structured));
   if (thinPosting || required.length < 3) caps.push({ limit: 89, reason: "the posting gives too little detail to call this excellent" });
@@ -487,7 +495,7 @@ export function scoreJob(job: MatchableJob, input: MatchInput, ai?: AiAssessment
     experienceGaps: allGaps,
     strengths,
     gaps,
-    careerAlignment: { score: career.score, note: career.note, role: career.role },
+    careerAlignment: { score: career.score, note: career.note, role: career.role, relation: career.relation },
     seniority,
     location,
     salary,

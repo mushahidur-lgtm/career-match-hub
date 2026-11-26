@@ -37,6 +37,16 @@ export interface EducationEntry {
   credential: string;
   institution: string;
   year: string | null;
+  /** Field of study, when it is not part of the credential. */
+  field?: string;
+}
+
+/** Extra facts about a certificate. `certifications` stays the list of names. */
+export interface CertificationDetail {
+  name: string;
+  issuer?: string;
+  /** "YYYY", "YYYY-MM" or "YYYY-MM-DD". */
+  expires?: string;
 }
 
 export interface CandidateProfile {
@@ -52,6 +62,7 @@ export interface CandidateProfile {
   workHistory?: WorkEntry[];
   education?: EducationEntry[];
   certifications?: string[];
+  certificationDetails?: CertificationDetail[];
 }
 
 /** One saved version of the resume with the profile read from it. Matching uses the active one. */
@@ -154,6 +165,9 @@ export interface EvidenceRef {
   quote: string;
 }
 
+export const ROLE_RELATIONS = ["direct", "adjacent", "transition", "unrelated"] as const;
+export type RoleRelation = (typeof ROLE_RELATIONS)[number];
+
 export type RequirementImportance = "required" | "preferred" | "optional";
 
 /** One skill the posting asks for and what the resume shows for it. */
@@ -187,14 +201,20 @@ export interface CandidateFacts {
   clearance?: ClearanceLevel | null;
   /** Words that rule a posting out of your career direction (for example "sales" or "commission"). */
   exclusions?: string[];
+  /** You state that the education and certificates entered are everything you hold. */
+  qualificationsComplete?: boolean;
 }
 
 export type EligibilityStatus = "eligible" | "not_eligible" | "needs_verification" | "not_applicable";
-export type EligibilityGate = "citizenship" | "work_authorization" | "sponsorship" | "clearance" | "language";
+export type EligibilityGate = "citizenship" | "work_authorization" | "sponsorship" | "clearance" | "language" | "education" | "certification";
+/** A single condition can also be a preference you do not meet, which never rules a job out. */
+export type CheckStatus = EligibilityStatus | "preferred_missing";
 
 export interface EligibilityCheck {
   gate: EligibilityGate;
-  status: EligibilityStatus;
+  status: CheckStatus;
+  /** Worth checking, but too weakly worded to move the job down the ranking. */
+  advisory?: boolean;
   /** The posting's own words. */
   postingEvidence: string;
   /** What the candidate stated, or null when they have not said. */
@@ -211,6 +231,37 @@ export interface EligibilityResult {
 /** What we know about the posting itself. Kept apart from how well it matches. */
 export const POSTING_STATUSES = ["retrieved", "partial", "expired", "unreachable", "unverified"] as const;
 export type PostingStatus = (typeof POSTING_STATUSES)[number];
+
+/* ---------- how much of a posting we hold, and whether it is still open ---------- */
+
+export const DESCRIPTION_STATUSES = ["full", "partially_enriched", "provider_only", "incomplete", "failed", "not_attempted"] as const;
+export type DescriptionStatus = (typeof DESCRIPTION_STATUSES)[number];
+
+export const DESCRIPTION_SOURCES = ["provider", "provider_detail", "json_ld", "employer_page"] as const;
+export type DescriptionSource = (typeof DESCRIPTION_SOURCES)[number];
+
+export interface Enrichment {
+  status: DescriptionStatus;
+  originalLength: number;
+  enrichedLength: number;
+  /** Where the description now held came from, word for word. */
+  source: DescriptionSource;
+  retrievedAt: string;
+  truncated: boolean;
+  /** A short, safe reason. Never a stack trace or a provider's raw message. */
+  error?: string;
+}
+
+export const VERIFICATION_STATES = ["verified_active", "unverified", "partially_verified", "expired", "closed", "link_unavailable", "verification_failed"] as const;
+export type VerificationState = (typeof VERIFICATION_STATES)[number];
+
+export interface Verification {
+  state: VerificationState;
+  checkedAt: string;
+  notes: string[];
+  /** Where the apply link ended up, when it redirected. */
+  finalUrl?: string;
+}
 
 export const RECOMMENDED_ACTIONS = ["strong_match", "consider", "upskill", "not_recommended", "verify_requirements"] as const;
 export type RecommendedAction = (typeof RECOMMENDED_ACTIONS)[number];
@@ -276,7 +327,7 @@ export interface MatchDetail {
   skillEvidence?: SkillMatchItem[];
   strengths?: EvidencedPoint[];
   gaps?: EvidencedPoint[];
-  careerAlignment?: { score: number | null; note: string; role: string | null };
+  careerAlignment?: { score: number | null; note: string; role: string | null; relation?: RoleRelation | null };
   /** The lowest cap that applied, so a later AI adjustment is held to it. Null when no cap applied. */
   capLimit?: number | null;
   /** Warnings about the analysis itself: low extraction confidence, thin posting, suspicious posting text. */
@@ -331,6 +382,9 @@ export interface Job {
   postingStatus?: PostingStatus;
   /** Why the posting has that status, in plain words. */
   postingNotes?: string[];
+  /** Set when the posting was opened and checked. */
+  enrichment?: Enrichment;
+  verification?: Verification;
 }
 
 export interface SearchFilters {
@@ -353,6 +407,10 @@ export interface SearchPreferences {
   weights?: Partial<MatchWeights>;
   /** Work authorization, languages, clearance and exclusions, as you state them. */
   facts?: CandidateFacts;
+  /** Roles you are willing to move into. */
+  transitionRoles?: string[];
+  /** Roles you do not want. */
+  excludedRoles?: string[];
 }
 
 export const DEFAULT_PREFERENCES: SearchPreferences = {
@@ -409,6 +467,8 @@ export interface SearchResponse {
   provider: ProviderStatus;
   scoring: AnalysisSource | "mixed" | "none";
   warnings: string[];
+  /** What each job source did on this search. */
+  sources?: { id: "adzuna" | "jsearch"; status: "ok" | "failed"; count: number; message?: string }[];
   /** Jobs ruled out by a confirmed eligibility mismatch, kept with the reason. Not recommendations. */
   excluded?: Job[];
   /** What the AI stage did on this search. */
@@ -517,6 +577,11 @@ export interface AppStatus {
   jobProvider: ProviderStatus;
   /** True when paid web lookups for recruiters are switched on. */
   recruiterWebSearch?: boolean;
+  /** What this server instance has seen from each job source. No source is called to find out. */
+  providers?: { id: "adzuna" | "jsearch"; configured: boolean; state: "ok" | "failing" | "unknown" | "not_configured"; lastFailure?: string; checkedAt?: string }[];
+  providerMode?: "fallback" | "all";
+  /** True when employer pages may be read to enrich and verify a job. */
+  pageChecks?: boolean;
 }
 
 export interface ParseResumeResponse {

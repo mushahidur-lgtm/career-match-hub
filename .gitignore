@@ -45,3 +45,7 @@ next-env.d.ts
 /test-results/
 /playwright-report/
 /blob-report/
+
+# Benchmark runs on your own backup: contains resume details
+/benchmark-output/
+career-match-hub-backup-*.json

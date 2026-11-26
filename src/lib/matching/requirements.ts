@@ -1,3 +1,4 @@
+import { trimHeading } from "@/lib/resume-sections";
 import { dedupe, extractSkills, flattenSkills } from "@/lib/skills";
 
 export interface ParsedRequirements {
@@ -30,7 +31,7 @@ function splitLines(text: string): string[] {
 }
 
 function headingOf(line: string): Section | null {
-  const bare = line.replace(/[:\s]+$/, "");
+  const bare = trimHeading(line);
   if (bare.length > 70) return null;
   const looksLikeHeading = /:\s*$/.test(line) || bare.split(/\s+/).length <= 8;
   if (!looksLikeHeading) return null;
@@ -38,12 +39,15 @@ function headingOf(line: string): Section | null {
   return null;
 }
 
+const YEARS_ASKED = /(\d{1,2}) ?\+? ?(?:(?:-|–|to) ?\d{1,2} ?\+? ?)?(?:years?|yrs?)\b/gi;
+
 /** Pulls the smallest year count from lines that talk about experience. */
 export function requiredYearsIn(lines: string[]): number | null {
   let best: number | null = null;
   for (const line of lines) {
     if (!/experience|exp\.|background|working with|in a similar role/i.test(line)) continue;
-    for (const m of line.matchAll(/(\d{1,2})\s*\+?\s*(?:(?:-|–|to)\s*\d{1,2}\s*\+?\s*)?(?:years?|yrs?)\b/gi)) {
+    // With runs of spaces collapsed first, the pattern needs no repeating space matcher and cannot backtrack badly.
+    for (const m of line.replace(/\s+/g, " ").matchAll(YEARS_ASKED)) {
       const n = Number(m[1]);
       if (n > 0 && n <= 30 && (best === null || n > best)) best = n;
     }

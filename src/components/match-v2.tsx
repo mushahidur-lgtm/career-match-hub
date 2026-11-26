@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { EligibilityStatus, EvidencedPoint, Job, MatchResult, PostingStatus, RecommendedAction } from "@/types/job";
+import type { CheckStatus, EvidencedPoint, Job, MatchResult, PostingStatus, RecommendedAction } from "@/types/job";
+import { DESCRIPTION_LABEL, VERIFICATION_LABEL } from "@/lib/jobs/apply-check";
 import { useFeedback } from "./feedback-context";
 import { Badge, inputClass, secondaryButton } from "./ui";
 
@@ -14,7 +15,8 @@ export const ACTION_LABEL: Record<RecommendedAction, [string, Tone]> = {
   not_recommended: ["Not recommended", "neutral"],
   verify_requirements: ["Verify requirements", "warn"],
 };
-export const ELIGIBILITY_LABEL: Record<EligibilityStatus, [string, Tone]> = {
+export const ELIGIBILITY_LABEL: Record<CheckStatus, [string, Tone]> = {
+  preferred_missing: ["Preferred qualification missing", "neutral"],
   eligible: ["Eligible", "good"],
   not_eligible: ["Not eligible", "warn"],
   needs_verification: ["Check eligibility", "warn"],
@@ -27,6 +29,23 @@ export const POSTING_LABEL: Record<PostingStatus, [string, Tone]> = {
   unreachable: ["Posting unreachable", "warn"],
   unverified: ["Posting unverified", "neutral"],
 };
+
+/** Posting completeness and checks, shown on a result card. Kept apart from the match score. */
+export function PostingBadges({ job }: { job: Job }) {
+  const d = job.match?.detail;
+  const total = d?.skillEvidence?.filter((s) => s.importance === "required").length ?? 0;
+  const preferredMissing = job.match?.eligibility?.checks.some((c) => c.status === "preferred_missing");
+  return (
+    <>
+      {job.verification && <Badge tone={VERIFICATION_LABEL[job.verification.state][1]}>{VERIFICATION_LABEL[job.verification.state][0]}</Badge>}
+      {job.enrichment && <Badge>{DESCRIPTION_LABEL[job.enrichment.status]}</Badge>}
+      {d && total > 0 && <Badge>Required skills {d.requiredMatched.length}/{total}</Badge>}
+      {job.match && <Badge>{job.match.ai?.status === "applied" ? "Reviewed by Claude" : "Rules only"}</Badge>}
+      {d?.careerAlignment?.relation === "transition" && <Badge tone="info">Career transition</Badge>}
+      {preferredMissing && <Badge>Preferred qualification missing</Badge>}
+    </>
+  );
+}
 
 /** The badges shown on a result card. */
 export function MatchBadges({ match }: { match: MatchResult }) {

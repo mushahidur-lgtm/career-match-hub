@@ -10,7 +10,11 @@ import type { Tab } from "./AppShell";
 import { BarList, ChartFrame, ColumnChart, LineChart, Stat } from "./charts";
 import { inputClass, Notice, primaryButton } from "./ui";
 
+import type { FeedbackEvent } from "@/lib/feedback";
+import { FeedbackAnalytics } from "./FeedbackAnalytics";
+
 interface Props {
+  feedback?: FeedbackEvent[];
   intel: IntelStore;
   applications: Application[];
   /** Skills on the active resume. */
@@ -28,7 +32,7 @@ const ESTIMATE = "Estimate: match scores are calculated by this app (and reviewe
 const money = (n: number | null) => (n === null ? "None stated" : `$${Math.round(n / 1000)}k`);
 const dateLabel = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "");
 
-export function CareerIntelligence({ intel, applications, skills, roles, hasResume, onGo, contacts = [] }: Props) {
+export function CareerIntelligence({ intel, applications, skills, roles, hasResume, onGo, contacts = [], feedback = [] }: Props) {
   const net = networkingStats(contacts);
   const [includeDemo, setIncludeDemo] = useState(false);
   const [a, setA] = useState<string>("");
@@ -56,6 +60,8 @@ export function CareerIntelligence({ intel, applications, skills, roles, hasResu
         {data.firstSeen ? ` since ${dateLabel(data.firstSeen)}` : ""} and the {applications.length} {applications.length === 1 ? "application" : "applications"} you track. They describe what you have seen, not the whole job market, and a search that
         returns few jobs will show few. Nothing here is estimated or filled in. The one exception, match scores, is labelled as an estimate.
       </Notice>
+
+      <FeedbackAnalytics events={feedback} applications={applications} seen={intel.seen} skills={skills} />
 
       {intel.seen.length >= SEEN_MAX - 10 && (
         <Notice tone="warn">

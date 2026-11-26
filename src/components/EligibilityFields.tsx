@@ -7,6 +7,7 @@ export interface FactsDraft {
   /** One per line: "French: intermediate". */
   languages: string;
   exclusions: string;
+  qualificationsComplete: boolean;
 }
 
 const AUTH_LABEL = { citizen: "Canadian citizen", permanent_resident: "Permanent resident", work_permit: "Work permit", needs_sponsorship: "I need sponsorship" } as const;
@@ -17,6 +18,7 @@ export const draftFacts = (f: CandidateFacts | undefined): FactsDraft => ({
   clearance: f?.clearance ?? "",
   languages: (f?.languages ?? []).map((l) => `${l.language}: ${l.level}`).join("\n"),
   exclusions: (f?.exclusions ?? []).join("\n"),
+  qualificationsComplete: f?.qualificationsComplete ?? false,
 });
 
 const rows = (text: string, max: number) => text.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, max);
@@ -35,6 +37,7 @@ export function readFacts(d: FactsDraft): CandidateFacts | undefined {
     ...(clearance ? { clearance } : {}),
     ...(languages.length ? { languages } : {}),
     ...(exclusions.length ? { exclusions } : {}),
+    ...(d.qualificationsComplete ? { qualificationsComplete: true } : {}),
   };
   return Object.keys(facts).length ? facts : undefined;
 }
@@ -77,6 +80,13 @@ export function EligibilityFields({ value, onChange }: { value: FactsDraft; onCh
       <label className="flex flex-col gap-1 text-sm">
         Words that rule a job out, one per line
         <textarea rows={2} value={value.exclusions} onChange={(e) => set({ exclusions: e.target.value })} className={inputClass} />
+      </label>
+      <label className="flex items-start gap-2 text-sm">
+        <input type="checkbox" checked={value.qualificationsComplete} onChange={(e) => set({ qualificationsComplete: e.target.checked })} className="mt-0.5 size-4 accent-[var(--brand)]" />
+        <span>
+          The education and certifications on my profile are everything I hold.
+          <span className="block text-xs text-muted">Only then can a job that strictly requires one you lack be ruled out. Otherwise it is marked to verify.</span>
+        </span>
       </label>
     </fieldset>
   );

@@ -7,6 +7,7 @@ import {
   inferEmploymentType,
   inferWorkMode,
   isRemoteLocation,
+  settleSome,
   stripHtml,
 } from "./common";
 
@@ -41,7 +42,11 @@ function employmentOf(j: AdzunaJob): EmploymentType {
 
 function normalize(j: AdzunaJob, country: "ca" | "us"): Job {
   const description = stripHtml(j.description ?? "");
-  const hasSalary = typeof j.salary_min === "number" || typeof j.salary_max === "number";
+  // Zero or a few hundred "a year" is a data error, not pay. Nothing is guessed in its place.
+  const plausible = (n: number | undefined) => (typeof n === "number" && n >= 1000 ? n : null);
+  let [low, high] = [plausible(j.salary_min), plausible(j.salary_max)];
+  if (low !== null && high !== null && low > high) [low, high] = [high, low];
+  const hasSalary = low !== null || high !== null;
   return {
     id: `adzuna-${j.id}`,
     title: stripHtml(j.title),
@@ -52,8 +57,8 @@ function normalize(j: AdzunaJob, country: "ca" | "us"): Job {
     category: inferCategory(j.title, description),
     salary: hasSalary
       ? {
-          min: j.salary_min ?? null,
-          max: j.salary_max ?? null,
+          min: low,
+          max: high,
           currency: country === "ca" ? "CAD" : "USD",
           period: "year",
           estimated: String(j.salary_is_predicted) === "1",
@@ -74,7 +79,11 @@ export async function searchAdzuna(f: SearchFilters): Promise<Job[]> {
   const countries = countriesFor(f.location);
   const keywords = [f.query.trim(), remote || f.workMode === "Remote" ? "remote" : ""].filter(Boolean).join(" ");
 
-  const runs = countries.map(async (country) => {
+  // Each extra page is another call against your quota, so one page is the default.
+  const requested = Number(process.env.ADZUNA_PAGES);
+  const pages = Number.isInteger(requested) && requested >= 1 && requested <= 3 ? requested : 1;
+  const requests = countries.flatMap((country) => Array.from({ length: pages }, (_, i) => ({ country, page: i + 1 })));
+  const runs = requests.map(async ({ country, page }) => {
     const params = new URLSearchParams({
       app_id: process.env.ADZUNA_APP_ID!.trim(),
       app_key: process.env.ADZUNA_APP_KEY!.trim(),
@@ -83,7 +92,7 @@ export async function searchAdzuna(f: SearchFilters): Promise<Job[]> {
     });
     if (keywords) params.set("what", keywords);
     if (!remote) {
-      const gta = /greater toronto|gta/i.test(f.location);
+      const gta = /greater toronto|\bgta\b/i.test(f.location);
       params.set("where", gta ? "Toronto" : cityOf(f.location));
       params.set("distance", gta ? "60" : "30");
     }
@@ -92,12 +101,12 @@ export async function searchAdzuna(f: SearchFilters): Promise<Job[]> {
     if (f.employmentType === "Part-time") params.set("part_time", "1");
     // No salary_min here: Adzuna filters on its own predicted salaries, which would hide jobs that state none.
     const data = await fetchJson<AdzunaResponse>(
-      `https://api.adzuna.com/v1/api/jobs/${country}/search/1?${params}`,
+      `https://api.adzuna.com/v1/api/jobs/${country}/search/${page}?${params}`,
       { headers: { Accept: "application/json" } },
       "Adzuna",
     );
     return (data.results ?? []).map((j) => normalize(j, country));
   });
 
-  return (await Promise.all(runs)).flat();
+  return settleSome(runs);
 }
