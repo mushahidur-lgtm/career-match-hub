@@ -1,0 +1,100 @@
+[
+  {
+    "id": "A",
+    "score": 94,
+    "confidence": "high",
+    "requiredMatched": [
+      "REST APIs",
+      "C#",
+      ".NET",
+      "SQL Server",
+      "Python"
+    ],
+    "requiredMissing": [
+      "SQL"
+    ],
+    "caps": []
+  },
+  {
+    "id": "B",
+    "score": 88,
+    "confidence": "high",
+    "requiredMatched": [
+      "Azure",
+      "T-SQL"
+    ],
+    "requiredMissing": [
+      "SQL"
+    ],
+    "caps": []
+  },
+  {
+    "id": "C",
+    "score": 60,
+    "confidence": "medium",
+    "requiredMatched": [
+      "C#",
+      ".NET",
+      "Git"
+    ],
+    "requiredMissing": [
+      "SQL"
+    ],
+    "caps": [
+      "Held to 60: the role is outside the work on your resume."
+    ]
+  },
+  {
+    "id": "D",
+    "score": 86,
+    "confidence": "high",
+    "requiredMatched": [
+      "C#",
+      ".NET",
+      "REST APIs",
+      "SQL Server"
+    ],
+    "requiredMissing": [
+      "SQL"
+    ],
+    "caps": []
+  },
+  {
+    "id": "E",
+    "score": 89,
+    "confidence": "high",
+    "requiredMatched": [
+      "C#",
+      ".NET",
+      "REST APIs",
+      "SQL Server"
+    ],
+    "requiredMissing": [
+      "SQL"
+    ],
+    "caps": []
+  },
+  {
+    "id": "F",
+    "score": 94,
+    "confidence": "high",
+    "requiredMatched": [
+      "C#",
+      ".NET",
+      "REST APIs",
+      "SQL Server"
+    ],
+    "requiredMissing": [
+      "SQL"
+    ],
+    "caps": []
+  },
+  {
+    "id": "G",
+    "score": 45,
+    "confidence": "low",
+    "requiredMatched": [],
+    "requiredMissing": [],
+    "caps": []
+  }
+]
