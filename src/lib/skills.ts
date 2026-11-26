@@ -10,7 +10,8 @@ const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Matches whole tokens only, so "Java" never matches "JavaScript" and "C" never matches "C++". */
 export function termPattern(terms: string[], flags = "i"): RegExp {
-  const body = terms.map((t) => escape(t).replace(/ /g, "[\\s-]+")).join("|");
+  // Longest first, so "ASP.NET Core" is read whole rather than as "ASP.NET" followed by a stray word.
+  const body = [...terms].sort((a, b) => b.length - a.length).map((t) => escape(t).replace(/ /g, "[\\s-]+")).join("|");
   return new RegExp(`(?<![A-Za-z0-9+#&])(?:${body})(?![A-Za-z0-9+#&])`, flags);
 }
 
