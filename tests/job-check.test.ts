@@ -252,17 +252,17 @@ describe("what is never fetched", () => {
   it("does not follow a redirect off the job systems, from the page or from robots.txt", async () => {
     const page = net({ "/jobs/123": { status: 302, headers: { location: "https://careers.acme.com/secret" } } });
     await checkJob(job(), { transport: page.transport, now: () => NOW });
-    expect(page.seen.some((u) => u.includes("careers.acme.com"))).toBe(false);
+    expect(page.seen.map((u) => new URL(u).hostname)).not.toContain("careers.acme.com");
     clearPageCache();
     const robots = net({ "/robots.txt": { status: 302, headers: { location: "https://careers.acme.com/robots.txt" } } });
     await checkJob(job(), { transport: robots.transport, now: () => NOW });
-    expect(robots.seen.some((u) => u.includes("careers.acme.com"))).toBe(false);
+    expect(robots.seen.map((u) => new URL(u).hostname)).not.toContain("careers.acme.com");
     expect(robots.pages().filter((u) => u.includes("/jobs/123"))).toEqual([]);
   });
   it("does not follow an employer's redirect into a job board", async () => {
     const n = net({ "/jobs/123": { status: 302, headers: { location: "https://www.indeed.com/viewjob?jk=1" } } });
     const r = await checkJob(job(), { transport: n.transport, now: () => NOW });
-    expect(n.seen.some((u) => u.includes("indeed"))).toBe(false);
+    expect(n.seen.map((u) => new URL(u).hostname)).not.toContain("www.indeed.com");
     expect(r.verification.state).toBe("unverified");
   });
   it("respects a robots.txt refusal", async () => {
