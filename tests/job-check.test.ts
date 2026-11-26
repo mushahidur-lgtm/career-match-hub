@@ -3,7 +3,11 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/job-check/route";
+import { normalizeCompany, normalizeTitle } from "@/lib/dedupe";
 import { checkJob, clearDetailCache, type CheckableJob } from "@/lib/jobs/check";
+import { extractRequirements } from "@/lib/matching/extraction";
+import { parseRequirements, requiredYearsIn } from "@/lib/matching/requirements";
+import { splitSections } from "@/lib/resume-sections";
 import { chooseDescription } from "@/lib/jobs/enrich";
 import { clearPageCache, FAILURE_TTL_MS, loadJobPage } from "@/lib/jobs/job-page";
 import { mainText, readJobPostings } from "@/lib/jobs/jsonld";
@@ -184,6 +188,26 @@ describe("description enrichment", () => {
     await checkJob(job({ id: "jsearch-9", source: "jsearch" }), { now: () => NOW });
     expect(urls).toHaveLength(1);
     expect(urls[0]).toContain("/job-details?job_id=9");
+  });
+});
+
+describe("hostile text does not stall the text readers", () => {
+  it("handles long runs of spaces, tabs and brackets quickly", () => {
+    const started = Date.now();
+    const spaces = " ".repeat(60_000);
+    requiredYearsIn([`experience 5${spaces}x`]);
+    extractRequirements({ title: "Developer", description: `Requirements:\n- experience 5${spaces}x` });
+    parseRequirements("Developer", `a:${"\t".repeat(60_000)}b`);
+    splitSections(`a${"\t:".repeat(30_000)}b`);
+    normalizeCompany("(".repeat(60_000));
+    normalizeTitle("[".repeat(60_000));
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+  it("still reads years, headings and bracketed names as before", () => {
+    expect(requiredYearsIn(["5 +   years of experience", "3 to 5 yrs experience"])).toBe(5);
+    expect(parseRequirements("Dev", "Requirements :  \n- SQL\nNice to have:\n- Python").preferred).toEqual(["Python"]);
+    expect(normalizeCompany("Acme (Canada) Inc.")).toBe("acme");
+    expect(normalizeTitle("Developer [Remote] (Contract)")).toBe("developer");
   });
 });
 

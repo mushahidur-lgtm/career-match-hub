@@ -8,7 +8,7 @@ const COMPANY_SUFFIX = /\b(?:incorporated|inc|ltd|limited|corp|corporation|co|co
 export function normalizeCompany(name: string): string {
   return name
     .toLowerCase()
-    .replace(/\(.*?\)/g, " ")
+    .replace(/\([^()]*\)/g, " ")
     .replace(/&/g, " and ")
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(COMPANY_SUFFIX, " ")
@@ -21,7 +21,7 @@ export function normalizeCompany(name: string): string {
 export function normalizeTitle(title: string): string {
   return title
     .toLowerCase()
-    .replace(/\(.*?\)|\[.*?\]/g, " ")
+    .replace(/\([^()]*\)|\[[^[\]]*\]/g, " ")
     .replace(/\bsr\.?(?=\s)/g, "senior")
     .replace(/\bjr\.?(?=\s)/g, "junior")
     .replace(/&/g, " and ")

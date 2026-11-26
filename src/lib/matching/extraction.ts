@@ -40,7 +40,8 @@ export const LOW_CONFIDENCE = 0.6;
 const EDUCATION = /\b(?:bachelor'?s?|master'?s?|ph\.?d|doctorate|degree|diploma|b\.?sc\.?|m\.?sc\.?|computer science)\b/i;
 const CERTIFICATION = /\b(?:certifications?|certified|certificate|licen[sc]e|PMP|CSM|AZ-\d{3}|DP-\d{3})\b/i;
 const OPTIONAL = /\boptional(?:ly)?\b|\bnot required\b/i;
-const YEARS = /(\d{1,2})\s*\+?\s*(?:(?:-|–|to)\s*\d{1,2}\s*\+?\s*)?(?:years?|yrs?)\b/i;
+/** Applied to text whose runs of spaces are already collapsed. */
+const YEARS = /(\d{1,2}) ?\+? ?(?:(?:-|–|to) ?\d{1,2} ?\+? ?)?(?:years?|yrs?)\b/i;
 
 type ExtractableJob = Pick<Job, "title" | "description"> & Partial<Pick<Job, "location" | "workMode" | "salary" | "descriptionTruncated">>;
 
@@ -71,7 +72,7 @@ export function extractRequirements(job: ExtractableJob): ExtractedRequirements 
       if (importance !== "required" && required.has(skill.toLowerCase())) continue;
       add("skill", skill, importance, line, base);
     }
-    const years = /experience|background/i.test(line) ? Number(line.match(YEARS)?.[1] ?? 0) : 0;
+    const years = /experience|background/i.test(line) ? Number(line.replace(/\s+/g, " ").match(YEARS)?.[1] ?? 0) : 0;
     if (years > 0 && years <= 30) {
       add("experience_years", String(years), importance, line, base);
       if (importance !== "required") preferredYears = Math.max(preferredYears ?? 0, years);

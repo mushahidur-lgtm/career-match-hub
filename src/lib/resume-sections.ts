@@ -3,6 +3,13 @@ import { dedupe } from "@/lib/skills";
 
 /* ---------- sections ---------- */
 
+/** Drops trailing colons and spaces. A loop, because the equivalent regular expression backtracks badly. */
+export function trimHeading(line: string): string {
+  let end = line.length;
+  while (end > 0 && (line[end - 1] === ":" || line[end - 1].trim() === "")) end--;
+  return line.slice(0, end);
+}
+
 type SectionName = "summary" | "experience" | "education" | "skills" | "certifications" | "projects" | "other";
 
 const HEADINGS: [SectionName, RegExp][] = [
@@ -15,7 +22,7 @@ const HEADINGS: [SectionName, RegExp][] = [
 ];
 
 function headingOf(line: string): SectionName | null {
-  const bare = line.trim().replace(/[:\s]+$/, "");
+  const bare = trimHeading(line.trim());
   if (!bare || bare.length > 45) return null;
   for (const [name, re] of HEADINGS) if (re.test(bare) && bare.split(/\s+/).length <= 5) return name;
   return null;
