@@ -9,18 +9,22 @@ import { loadInsights, insightsKey, saveInsights } from "@/lib/insights-cache";
 import { freshness, levelBucket } from "@/lib/job-meta";
 import { parseRequirements } from "@/lib/matching/requirements";
 import { adviseResume, buildPrepSummary, type ResumeAdvice } from "@/lib/resume-help";
-import type { ApiError, Job, ResumeVersion, SavedJob } from "@/types/job";
+import { toMatchInput } from "@/lib/search/match-input";
+import type { ApiError, Job, ResumeVersion, SavedJob, SearchPreferences } from "@/types/job";
+import { DeepAssessment } from "./DeepAssessment";
+import { PostingPanel } from "./PostingPanel";
 import { MatchBreakdown } from "./MatchBreakdown";
 import { useContacts } from "./contacts/context";
 import { ConfidenceBadge, FreshnessBadge, JobQualityPanel, SaveControl, modeTone, safeUrl, typeLabel, typeTone, type JobActions } from "./job-parts";
 import { Badge, Notice, ScoreBadge, Spinner, inputClass, primaryButton, secondaryButton } from "./ui";
 
-export type DetailTab = "overview" | "description" | "match" | "resume" | "application";
+export type DetailTab = "overview" | "description" | "match" | "assessment" | "resume" | "application";
 
 const TABS: { id: DetailTab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "description", label: "Job description" },
   { id: "match", label: "Match analysis" },
+  { id: "assessment", label: "Deep assessment" },
   { id: "resume", label: "Resume recommendations" },
   { id: "application", label: "Application" },
 ];
@@ -34,6 +38,9 @@ export interface DetailContextValue {
   /** True when an Anthropic key is configured, so tailored suggestions can be requested. */
   aiAvailable: boolean;
   onNotes: (jobId: string, notes: string) => void;
+  preferences?: SearchPreferences;
+  /** Keeps what a posting check found, in the results and saved applications. */
+  onJobChecked?: (job: Job) => void;
 }
 
 export const DetailContext = createContext<DetailContextValue>({ resume: null, resumes: [], aiAvailable: false, onNotes: () => undefined });
@@ -86,10 +93,15 @@ type Insights = ReturnType<typeof useInsights>;
 
 /* ---------- the dialog ---------- */
 
-export function JobDetailDialog({ job, saved, initialTab = "overview", onSave, onStatus, onRemove, onClose }: Props) {
+export function JobDetailDialog({ job: given, saved, initialTab = "overview", onSave, onStatus, onRemove, onClose }: Props) {
+  // A posting check updates what is shown here at once. The list behind is updated on closing, so the job
+  // does not move or disappear while it is open.
+  const [checked, setChecked] = useState<Job | null>(null);
+  const job = checked ?? given;
   const dialog = useRef<HTMLDialogElement>(null);
   const [tab, setTab] = useState<DetailTab>(initialTab);
-  const { resume, aiAvailable } = useContext(DetailContext);
+  const { resume, aiAvailable, preferences, onJobChecked } = useContext(DetailContext);
+  const matchInput = resume ? toMatchInput(resume.profile, resume.text, preferences) : null;
   const contacts = useContacts();
   const insights = useInsights(job, resume);
   const titleId = `job-${job.id}-title`;
@@ -117,7 +129,10 @@ export function JobDetailDialog({ job, saved, initialTab = "overview", onSave, o
     <dialog
       ref={dialog}
       aria-labelledby={titleId}
-      onClose={onClose}
+      onClose={() => {
+        if (checked) onJobChecked?.(checked);
+        onClose();
+      }}
       onClick={(e) => {
         if (e.target === dialog.current) dialog.current?.close();
       }}
@@ -164,7 +179,13 @@ export function JobDetailDialog({ job, saved, initialTab = "overview", onSave, o
       </header>
 
       <div id={`${titleId}-panel`} role="tabpanel" aria-labelledby={`${titleId}-tab-${tab}`} className="p-5">
-        {tab === "overview" && <OverviewTab job={job} />}
+        {tab === "overview" && (
+          <div className="space-y-6">
+            <PostingPanel job={job} input={matchInput} aiAvailable={aiAvailable} onChecked={setChecked} />
+            <OverviewTab job={job} />
+          </div>
+        )}
+        {tab === "assessment" && <DeepAssessment key={job.description.length} job={job} resume={resume} preferences={preferences} />}
         {tab === "description" && <DescriptionTab job={job} />}
         {tab === "match" && <MatchTab job={job} hasResume={Boolean(resume)} />}
         {tab === "resume" && <ResumeTab resume={resume} advice={advice} insights={insights} aiAvailable={aiAvailable} />}

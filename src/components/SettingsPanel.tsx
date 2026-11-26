@@ -38,6 +38,8 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport, ac
     () => Object.fromEntries(MATCH_COMPONENTS.map((k) => [k, String(Math.round(initialWeights[k]))])) as Record<MatchComponentKey, string>,
   );
   const [facts, setFacts] = useState(() => draftFacts(p.facts));
+  const [transition, setTransition] = useState((p.transitionRoles ?? []).join("\n"));
+  const [excluded, setExcluded] = useState((p.excludedRoles ?? []).join("\n"));
   const weightTotal = MATCH_COMPONENTS.reduce((n, k) => n + (Number(weights[k]) || 0), 0);
   const [savedMsg, setSavedMsg] = useState(false);
   const [pending, setPending] = useState<{ data: AppData; exportedAt: string } | null>(null);
@@ -93,7 +95,7 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport, ac
     const scaled = normalizeWeights(Object.fromEntries(MATCH_COMPONENTS.map((k) => [k, Number(weights[k]) || 0])));
     const rounded = Object.fromEntries(MATCH_COMPONENTS.map((k) => [k, Math.round(scaled[k] * 10) / 10])) as Record<MatchComponentKey, number>;
     setWeights(Object.fromEntries(MATCH_COMPONENTS.map((k) => [k, String(Math.round(rounded[k]))])) as Record<MatchComponentKey, string>);
-    onSavePreferences({ minSalary: salary, locations: lines(locations), primaryRoles: lines(primary), secondaryRoles: lines(secondary), weights: rounded, facts: readFacts(facts) });
+    onSavePreferences({ minSalary: salary, locations: lines(locations), primaryRoles: lines(primary), secondaryRoles: lines(secondary), weights: rounded, facts: readFacts(facts), transitionRoles: lines(transition), excludedRoles: lines(excluded) });
     setSavedMsg(true);
     setTimeout(() => setSavedMsg(false), 2500);
   }
@@ -146,6 +148,8 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport, ac
         <TextList id="pref-locations" label="Cities, one per line" value={locations} onChange={setLocations} rows={5} />
         <TextList id="pref-primary" label="Primary roles, one per line" value={primary} onChange={setPrimary} rows={6} />
         <TextList id="pref-secondary" label="Secondary roles, one per line" value={secondary} onChange={setSecondary} rows={8} />
+        <TextList id="pref-transition" label="Roles you are willing to move into, one per line" value={transition} onChange={setTransition} rows={3} />
+        <TextList id="pref-excluded" label="Roles you do not want, one per line" value={excluded} onChange={setExcluded} rows={3} />
         <EligibilityFields value={facts} onChange={setFacts} />
         <fieldset className="space-y-3">
           <legend className="text-sm font-medium">How much each part of a match counts</legend>

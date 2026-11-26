@@ -11,6 +11,7 @@ import {
   type AnalyzeResumeResponse,
   type ApiError,
   type CandidateProfile,
+  type CertificationDetail,
   type EducationEntry,
   type ParseResumeResponse,
   type ResumeVersion,
@@ -457,6 +458,7 @@ function ProfilePanel({
 
       <div className="rounded-xl border border-line bg-surface p-5">
         <TagEditor label="Certifications" help="Only list certifications you hold." items={profile.certifications ?? []} onChange={(next) => set({ certifications: next })} placeholder="Add a certification" />
+        <CertificationDetails names={profile.certifications ?? []} details={profile.certificationDetails ?? []} onChange={(next) => set({ certificationDetails: next })} />
       </div>
 
       <div className="rounded-xl border border-line bg-surface p-5">
@@ -526,9 +528,12 @@ function EducationEditor({ items, onChange }: { items: EducationEntry[]; onChang
       {items.length === 0 && <p className="mt-2 text-sm text-muted">No degrees or diplomas were found.</p>}
       <ul className="mt-3 space-y-3">
         {items.map((e, i) => (
-          <li key={i} className="grid gap-3 rounded-lg border border-line p-3 sm:grid-cols-[1fr_1fr_6rem_auto] sm:items-end">
+          <li key={i} className="grid gap-3 rounded-lg border border-line p-3 sm:grid-cols-[1fr_1fr_1fr_6rem_auto] sm:items-end">
             <Field label="Degree or diploma" id={`ed-cred-${i}`}>
               <input id={`ed-cred-${i}`} value={e.credential} maxLength={200} onChange={(ev) => update(i, { credential: ev.target.value })} className={inputClass} />
+            </Field>
+            <Field label="Field of study" id={`ed-field-${i}`}>
+              <input id={`ed-field-${i}`} value={e.field ?? ""} maxLength={120} onChange={(ev) => update(i, { field: ev.target.value || undefined })} className={inputClass} />
             </Field>
             <Field label="School" id={`ed-inst-${i}`}>
               <input id={`ed-inst-${i}`} value={e.institution} maxLength={200} onChange={(ev) => update(i, { institution: ev.target.value })} className={inputClass} />
@@ -546,6 +551,32 @@ function EducationEditor({ items, onChange }: { items: EducationEntry[]; onChang
         <Plus className="size-4" aria-hidden /> Add education
       </button>
     </div>
+  );
+}
+
+/** Issuer and expiry for each certificate listed above, matched by name. */
+function CertificationDetails({ names, details, onChange }: { names: string[]; details: CertificationDetail[]; onChange: (next: CertificationDetail[]) => void }) {
+  if (!names.length) return null;
+  const find = (name: string) => details.find((d) => d.name === name);
+  const update = (name: string, patch: Partial<CertificationDetail>) => {
+    const next = { ...(find(name) ?? { name }), ...patch };
+    // Details for certificates that are no longer listed are dropped.
+    onChange([...details.filter((d) => d.name !== name && names.includes(d.name)), ...(next.issuer || next.expires ? [next] : [])]);
+  };
+  return (
+    <ul className="mt-4 space-y-3">
+      {names.map((name, i) => (
+        <li key={name} className="grid gap-3 rounded-lg border border-line p-3 sm:grid-cols-[1fr_1fr_12rem] sm:items-end">
+          <p className="text-sm font-medium">{name}</p>
+          <Field label="Issuer" id={`cert-issuer-${i}`}>
+            <input id={`cert-issuer-${i}`} value={find(name)?.issuer ?? ""} maxLength={120} onChange={(ev) => update(name, { issuer: ev.target.value || undefined })} className={inputClass} />
+          </Field>
+          <Field label="Expires, if it does" id={`cert-expires-${i}`}>
+            <input id={`cert-expires-${i}`} type="month" value={find(name)?.expires?.slice(0, 7) ?? ""} onChange={(ev) => update(name, { expires: ev.target.value || undefined })} className={inputClass} />
+          </Field>
+        </li>
+      ))}
+    </ul>
   );
 }
 

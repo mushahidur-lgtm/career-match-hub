@@ -427,7 +427,12 @@ export default function Home() {
 
   const provider = results ? results.provider : status?.jobProvider;
 
-  const detailContext = { resume: active, resumes, aiAvailable: status?.ai ?? false, onNotes: setJobNotes };
+  const keepCheckedJob = (job: Job) => {
+    const replace = (list: Job[]) => list.map((j) => (j.id === job.id ? job : j));
+    setResults((r) => (r ? { ...r, jobs: replace(r.jobs), ...(r.excluded ? { excluded: replace(r.excluded) } : {}) } : r));
+    setSaved((list) => list.map((s) => (s.job.id === job.id ? { ...s, job } : s)));
+  };
+  const detailContext = { resume: active, resumes, aiAvailable: status?.ai ?? false, onNotes: setJobNotes, preferences, onJobChecked: keepCheckedJob };
 
   return (
     <FeedbackContext.Provider value={record}>
@@ -541,6 +546,11 @@ export default function Home() {
                     </button>
                   </div>
                 </div>
+                {results.sources && results.sources.length > 0 && (
+                  <p className="text-sm text-muted">
+                    Job sources: {results.sources.map((s) => `${s.id === "adzuna" ? "Adzuna" : "JSearch"} ${s.status === "ok" ? `returned ${s.count}` : "failed"}`).join(", ")}.
+                  </p>
+                )}
                 {results.warnings.map((w) => (
                   <Notice key={w} tone="warn">
                     {w}
@@ -631,6 +641,7 @@ export default function Home() {
             hasResume={Boolean(profile)}
             onGo={setTab}
             contacts={contacts.contacts}
+            feedback={feedback}
           />
         ) : tab === "history" ? (
           <SearchHistory
