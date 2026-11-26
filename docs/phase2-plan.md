@@ -1,6 +1,6 @@
 # Phase 2: matching quality, job intelligence and validation
 
-Branch `feat/phase2-job-intelligence` from `main` at `0a240a8` (hybrid engine and Dependabot PRs 1 and 2 merged).
+Status: implemented; see `docs/phase2-report.md`. Branch `feat/phase2-job-intelligence` from `main` at `0a240a8` (hybrid engine and Dependabot PRs 1 and 2 merged).
 Baseline on that commit: vitest 720/720, `tsc` and `eslint` clean.
 
 ## What exists, what is missing

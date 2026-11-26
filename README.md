@@ -30,6 +30,8 @@ Browser (Next.js client)                          Server (Next.js route handlers
                                                 /api/job-insights,
                                                 /api/interview-prep   ─▶ Anthropic           (only if ANTHROPIC_API_KEY is set)
                                                 /api/find-recruiter   ─▶ Anthropic web search (only if a key AND RECRUITER_WEB_SEARCH=1 or sign-in is required)
+                                                /api/job-assessment   ─▶ Anthropic           (only when you ask for one job)
+                                                /api/job-check        ─▶ JSearch detail and the employer's page (page reads only if JOB_PAGE_FETCH=1)
                                                 /api/status            (reports which features are on; never key values)
   optional: Supabase sign-in + synced copy ◀──▶ /api/cron/daily        ◀─ GitHub Actions at 8:00 AM Toronto (needs CRON_SECRET)
 ```
@@ -59,7 +61,8 @@ Set these in `.env.local` locally or in Vercel's Environment Variables. Names on
 | `ADZUNA_APP_ID`, `ADZUNA_APP_KEY` | Server | No |
 | `RAPIDAPI_KEY` | Server | No |
 | `CMH_DEMO` | Server (allows labelled sample jobs in production) | No |
-| `AI_SHORTLIST`, `JOB_PROVIDER_MODE` | Server (search tuning) | No |
+| `AI_SHORTLIST`, `JOB_PROVIDER_MODE`, `ADZUNA_PAGES` | Server (search tuning) | No |
+| `JOB_PAGE_FETCH`, `JOB_CACHE_HOURS` | Server (reading employer pages; off by default) | No |
 | `RECRUITER_WEB_SEARCH` | Server | No |
 | `FIND_RECRUITER_MAX_PER_HOUR` | Server | No |
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser (fixed at build time; protected by row-level security) | Yes, by design |
@@ -92,6 +95,10 @@ Open http://localhost:3000. With no keys the dev server shows sample jobs so you
 | `npm run typecheck` | Run the TypeScript compiler without emitting files |
 | `npm run test:e2e:install` | Download the Chromium browser used by the smoke tests (once) |
 | `npm run test:e2e` | Run the browser smoke tests against a production build (run `npm run build` first) |
+
+### Matching benchmark
+
+`npm run benchmark` scores 37 invented postings for two invented candidates and rewrites `docs/benchmark-report.md`. To see how **your** profile reads the same postings, export a backup from Settings and run `npm run benchmark -- --backup <file.json>`. That report goes to the git-ignored `benchmark-output/`; it contains resume details, so do not commit it or the backup. Nothing is sent anywhere.
 
 ### Testing and releases
 
@@ -180,6 +187,28 @@ A part the posting gives no information about is skipped, and the remaining part
 
 Scores are guidance about fit. They do not predict hiring decisions.
 
+## Opening a job: posting check and deep assessment
+
+**Check this posting** (Overview tab) asks the server to look for a fuller description and to see whether the job still appears open.
+
+- With a JSearch key, JSearch listings are read from JSearch's own detail endpoint (one call against your quota).
+- With `JOB_PAGE_FETCH=1`, the server also reads the employer's or applicant-tracking page behind the apply link: structured `JobPosting` data first, then the page's main text if it contains the description already held. It never reads Adzuna redirects or job boards, honours `robots.txt`, refuses private and local addresses, limits redirects, size and time, and caches in memory (`JOB_CACHE_HOURS`, default 24; failures 10 minutes). Without the setting nothing is fetched and the job shows "Not verified".
+- States: verified active, partially verified, not verified, expired, closed, apply link unavailable, check failed. A block, CAPTCHA, timeout or server error is "check failed", never "closed". "Verified active" needs the employer's page to publish the job as an open posting.
+- Turning page reads on lets anyone who can open your site make your server request pages. It is rate limited, but keep the site protected if it is public.
+
+**Deep assessment** runs only when you press it. Skills, qualifications and eligibility come from the rules; Claude adds experience, responsibility comparison, a recommendation and interview preparation. Quotes that are not in your resume or the posting are removed, it gives no score and cannot change eligibility. Without a key you see the rule findings and a message. Finished assessments are kept in your browser.
+
+### API
+
+| Route | Method | Body | Returns |
+| --- | --- | --- | --- |
+| `/api/search-jobs` | POST | filters, profile, resumeText, preferences | `jobs`, `excluded`, `ai`, `sources`, `warnings` |
+| `/api/job-check` | POST | `job` (id, title, company, source, applyUrl, description, descriptionTruncated, postedAt) | description, `enrichment`, `verification`, `postingStatus` |
+| `/api/job-assessment` | POST | `job`, `resumeText`, `profile`, `preferences` | `status`, `rules`, `ai`, `notes` |
+| `/api/status` | GET | none | `ai`, `model`, `jobProvider`, `recruiterWebSearch`, `providers`, `providerMode`, `pageChecks` |
+
+All are rate limited per client. `/api/status` never calls an outside service: source health is what this server instance last saw.
+
 ## Cloud sync and the morning run
 
 This part is optional and needs a free [Supabase](https://supabase.com) project. Nothing here is created for you: you make the project and put its keys into your own settings. Never paste keys into chat.
@@ -266,6 +295,12 @@ This part is optional and needs a free [Supabase](https://supabase.com) project.
 - Uploaded files are parsed in memory on the server and discarded.
 - With `ANTHROPIC_API_KEY` set, your resume text and the job postings in view are sent to Anthropic for analysis and scoring.
 - Anyone who can open a deployed copy can use your API keys through it. Add a Vercel Firewall rate-limit rule, or Vercel Deployment Protection, if the site is public. The app has a small per-instance rate limit, but it resets whenever a serverless instance restarts.
+
+### Phase 2 additions
+
+- A deep assessment sends your resume and that posting to Anthropic, only when you ask.
+- A posting check sends the job's details (not your resume) to the server, which may call JSearch or read the employer's page.
+- Education, certificates, eligibility facts and outcome events stay in your browser (and in your own Supabase copy if sync is on).
 
 ### Privacy boundaries and external services
 

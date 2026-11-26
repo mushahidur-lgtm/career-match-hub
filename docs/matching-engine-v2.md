@@ -1,6 +1,6 @@
 # Matching engine v2: hybrid deterministic + AI-assisted
 
-Status: in progress on branch `feat/hybrid-matching-engine`. This document is the architecture
+Status: merged into `main` (pull request 6) and extended by `docs/phase2-report.md`. This document is the architecture
 assessment, the phased plan and (at the end) the record of what changed.
 
 ## 1. Architecture assessment (baseline `8e8b101`)
