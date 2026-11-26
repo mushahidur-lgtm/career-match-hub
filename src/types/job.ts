@@ -467,6 +467,8 @@ export interface SearchResponse {
   provider: ProviderStatus;
   scoring: AnalysisSource | "mixed" | "none";
   warnings: string[];
+  /** What each job source did on this search. */
+  sources?: { id: "adzuna" | "jsearch"; status: "ok" | "failed"; count: number; message?: string }[];
   /** Jobs ruled out by a confirmed eligibility mismatch, kept with the reason. Not recommendations. */
   excluded?: Job[];
   /** What the AI stage did on this search. */
@@ -575,6 +577,11 @@ export interface AppStatus {
   jobProvider: ProviderStatus;
   /** True when paid web lookups for recruiters are switched on. */
   recruiterWebSearch?: boolean;
+  /** What this server instance has seen from each job source. No source is called to find out. */
+  providers?: { id: "adzuna" | "jsearch"; configured: boolean; state: "ok" | "failing" | "unknown" | "not_configured"; lastFailure?: string; checkedAt?: string }[];
+  providerMode?: "fallback" | "all";
+  /** True when employer pages may be read to enrich and verify a job. */
+  pageChecks?: boolean;
 }
 
 export interface ParseResumeResponse {

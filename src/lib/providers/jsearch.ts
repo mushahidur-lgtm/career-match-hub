@@ -6,6 +6,7 @@ import {
   inferEmploymentType,
   inferWorkMode,
   isRemoteLocation,
+  settleSome,
   stripHtml,
 } from "./common";
 
@@ -117,7 +118,7 @@ export async function searchJSearch(f: SearchFilters): Promise<Job[]> {
     return list.filter((j) => j?.job_id && j.job_title).map(normalize);
   });
 
-  return (await Promise.all(runs)).flat();
+  return settleSome(runs);
 }
 
 /** The full text of one posting from JSearch's own detail endpoint, or null when it has none. */

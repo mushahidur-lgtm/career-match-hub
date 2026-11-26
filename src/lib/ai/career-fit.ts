@@ -20,7 +20,7 @@ const POSTING_CHARS = 2_500;
 const BATCH_SIZE = 10;
 const CONCURRENCY = 2;
 /** Leaves room inside the route's 120 second limit. */
-const DEADLINE_MS = 95_000;
+const DEADLINE_MS = 85_000;
 const CACHE_TTL_MS = 60 * 60 * 1000;
 const CACHE_MAX = 500;
 
