@@ -312,7 +312,7 @@ function SkillChips({ title, skills, tone }: { title: string; skills: string[]; 
 function MatchTab({ job, hasResume }: { job: Job; hasResume: boolean }) {
   if (!job.match) return <p className="text-sm text-muted">{hasResume ? "Search again to score this job." : "Add a resume to see how well this job matches."}</p>;
   if (!job.match.detail) return <p className="max-w-prose text-sm">{job.match.matchReason}</p>;
-  return <MatchBreakdown match={job.match} />;
+  return <MatchBreakdown match={job.match} job={job} />;
 }
 
 /* ---------- resume recommendations ---------- */

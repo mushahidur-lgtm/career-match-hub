@@ -1,4 +1,5 @@
 import { mergeResumes, mergeSavedJobs, type AppData } from "@/lib/backup";
+import { mergeFeedback } from "@/lib/feedback";
 import { mergeContactStores } from "@/lib/contacts/model";
 import { EMPTY_INTEL, mergeIntel } from "@/lib/history";
 import { EMPTY_CONTACTS } from "@/types/contacts";
@@ -63,6 +64,7 @@ export function mergeAppData(local: AppData, cloud: AppData): AppData {
     filters: local.filters,
     preferences: local.preferences,
     saved: mergeSavedJobs(local.saved, cloud.saved),
+    ...(local.feedback || cloud.feedback ? { feedback: mergeFeedback(local.feedback ?? [], cloud.feedback ?? []) } : {}),
     intel: mergeIntel(local.intel ?? EMPTY_INTEL, cloud.intel ?? EMPTY_INTEL),
     contacts: mergeContactStores(local.contacts ?? EMPTY_CONTACTS, cloud.contacts ?? EMPTY_CONTACTS),
     watchlist: mergeWatchlists(local.watchlist ?? EMPTY_WATCHLIST, cloud.watchlist ?? EMPTY_WATCHLIST),

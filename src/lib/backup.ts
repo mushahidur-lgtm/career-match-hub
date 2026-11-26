@@ -11,6 +11,7 @@ import {
   SavedJobsSchema,
 } from "./schemas";
 import { duplicateKey } from "./dedupe";
+import { readFeedback, type FeedbackEvent } from "./feedback";
 import { readContacts } from "./contacts/schema";
 import { readWatchlist } from "./watchlist/schema";
 import { readIntel } from "./history-load";
@@ -32,6 +33,8 @@ export interface AppData {
   contacts?: ContactsStore;
   /** Career sites you check by hand. Absent in backups made before they existed. */
   watchlist?: WatchlistStore;
+  /** What happened to jobs you were shown. Absent in backups made before it existed. */
+  feedback?: FeedbackEvent[];
 }
 
 const DataV2 = z.object({
@@ -44,6 +47,7 @@ const DataV2 = z.object({
   intel: z.unknown().optional(),
   contacts: z.unknown().optional(),
   watchlist: z.unknown().optional(),
+  feedback: z.unknown().optional(),
 });
 
 /** Backups made before resume versions existed held a single resume and profile. */
@@ -88,12 +92,13 @@ export function parseBackup(text: string): ParsedBackup {
     // Versions 2 and 3 share a shape. Version 3 adds application fields; older status names are read as the new ones.
     const d = DataV2.safeParse(env.data.data);
     if (!d.success) return damaged(d.error.issues[0]);
-    const { intel: rawIntel, contacts: rawContacts, watchlist: rawWatchlist, ...rest } = d.data;
+    const { intel: rawIntel, contacts: rawContacts, watchlist: rawWatchlist, feedback: rawFeedback, ...rest } = d.data;
+    const feedback = readFeedback(rawFeedback);
     const intel = rawIntel === undefined ? undefined : readIntel(rawIntel)?.store;
     // Contacts are read one at a time too, so one damaged entry cannot reject the whole backup.
     const contacts = rawContacts === undefined ? undefined : readContacts(rawContacts)?.store;
     const watchlist = rawWatchlist === undefined ? undefined : readWatchlist(rawWatchlist)?.store;
-    return { ok: true, data: { ...(rest as Omit<AppData, "intel" | "contacts" | "watchlist">), ...(intel ? { intel } : {}), ...(contacts ? { contacts } : {}), ...(watchlist ? { watchlist } : {}) }, exportedAt: env.data.exportedAt };
+    return { ok: true, data: { ...(rest as Omit<AppData, "intel" | "contacts" | "watchlist" | "feedback">), ...(feedback ? { feedback } : {}), ...(intel ? { intel } : {}), ...(contacts ? { contacts } : {}), ...(watchlist ? { watchlist } : {}) }, exportedAt: env.data.exportedAt };
   }
 
   const d = DataV1.safeParse(env.data.data);

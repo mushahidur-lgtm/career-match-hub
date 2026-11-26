@@ -1,4 +1,5 @@
 import { yearlySalary } from "@/lib/format";
+import { applyLinkInfo } from "@/lib/job-quality";
 import type { Job } from "@/types/job";
 
 const COMPANY_SUFFIX = /\b(?:incorporated|inc|ltd|limited|corp|corporation|co|company|llc|llp|plc|lp|ulc|gmbh)\b/g;
@@ -44,6 +45,9 @@ export function duplicateKey(job: Pick<Job, "title" | "company" | "location">): 
   return `${normalizeTitle(job.title)}|${company}|${cityOf(job.location)}`;
 }
 
+/** True for a listing on the employer's own site or application system. */
+const direct = (j: Job) => applyLinkInfo(j).direct;
+
 const richness = (j: Job) =>
   (j.salary && !j.salary.estimated ? 4 : j.salary ? 1 : 0) + (j.applyUrl ? 2 : 0) + Math.min(3, Math.floor(j.description.length / 800)) + (j.postedAt ? 1 : 0);
 
@@ -79,7 +83,13 @@ export function mergeDuplicates(jobs: Job[]): Job[] {
     const donor = !winner.salary || winner.salary.estimated ? rest.find((j) => j.salary && !j.salary.estimated && yearlySalary(j) !== null) : undefined;
     const urls = [...new Set(rest.map((j) => j.applyUrl).filter((u): u is string => !!u && u !== winner.applyUrl))].slice(0, MAX_OTHER_LINKS);
     // A board that shares only the start of a posting loses to another that shares the whole text. The text is that listing's own, word for word.
-    const fuller = winner.descriptionTruncated || winner.description.length < 400 ? rest.filter((j) => !j.descriptionTruncated && j.description.length > winner.description.length + 200).sort((a, b) => b.description.length - a.description.length)[0] : undefined;
+    // Between two complete texts, the employer's own is preferred.
+    const fuller =
+      winner.descriptionTruncated || winner.description.length < 400
+        ? rest
+            .filter((j) => !j.descriptionTruncated && j.description.length > winner.description.length + 200)
+            .sort((a, b) => Number(direct(b)) - Number(direct(a)) || b.description.length - a.description.length)[0]
+        : undefined;
     return {
       ...winner,
       ...(fuller ? { description: fuller.description, descriptionTruncated: false } : {}),

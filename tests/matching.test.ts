@@ -137,7 +137,8 @@ describe("detail of the posting limits the score", () => {
   it("a two-line posting cannot be rated excellent, however well it fits", () => {
     const thin = scoreJob(job("Join our data team. You will work with Python and SQL.", { title: "Data Engineer", workMode: "Remote", location: "Remote, Canada" }), input());
     expect(thin.score).toBeLessThanOrEqual(89);
-    expect(thin.detail!.caps.join(" ")).toMatch(/too little detail/);
+    // The cap applies even when the weighted total is already under it.
+    expect(thin.detail!.capLimit).toBeLessThanOrEqual(89);
   });
   it("a detailed posting can still reach excellent", () => {
     expect(scoreJob(job(STRONG), input()).score).toBeGreaterThanOrEqual(90);
@@ -149,7 +150,8 @@ describe("target roles", () => {
   const base = { locations: ["Greater Toronto Area, ON"], minSalary: 100_000 };
 
   it("holds back a role unlike past titles when it is not a target", () => {
-    expect(scoreJob(dotnet, input({ preferences: base })).detail!.caps.join(" ")).toMatch(/outside the work on your resume/);
+    // C# is only listed on this resume, so v2 scores the job below the cap already; the cap still applies.
+    expect(scoreJob(dotnet, input({ preferences: base })).detail!.capLimit).toBeLessThanOrEqual(60);
   });
   it("does not hold back a role the candidate is aiming for", () => {
     const m = scoreJob(dotnet, input({ preferences: { ...base, roles: ["Senior .NET Developer"] } }));
@@ -164,7 +166,8 @@ describe("target roles", () => {
 describe("symbols in technology names", () => {
   it("counts C# and .NET as application development in the resume and the posting", () => {
     const dotnet = job("Requirements:\n- C#, .NET Core and ASP.NET\n- 7+ years of experience", { title: "Senior .NET Developer" });
-    const r = scoreJob(dotnet, input()).detail!.components.find((c) => c.key === "responsibilities")!;
+    const shown = `${RESUME}\nExperience\n- Developed C# and .NET services for a claims team.`;
+    const r = scoreJob(dotnet, input({ resumeText: shown })).detail!.components.find((c) => c.key === "responsibilities")!;
     expect(r.score).toBeGreaterThan(0);
   });
 });
@@ -181,8 +184,8 @@ describe("required, preferred, transferable and missing skills", () => {
   });
 
   it("calls a related skill transferable, not missing and not matched", () => {
-    expect(m.transferable).toContainEqual({ skill: "AWS", via: "Azure" });
-    expect(m.transferable).toContainEqual({ skill: "Kubernetes", via: "Docker" });
+    expect(m.transferable).toContainEqual(expect.objectContaining({ skill: "AWS", via: "Azure" }));
+    expect(m.transferable).toContainEqual(expect.objectContaining({ skill: "Kubernetes", via: "Docker" }));
     expect(m.requiredMissing).not.toContain("AWS");
     expect(m.requiredMatched).not.toContain("AWS");
   });
@@ -259,14 +262,14 @@ describe("salary", () => {
 });
 
 describe("weights", () => {
-  it("defaults to 30/25/20/10/5/10", () => {
-    expect(DEFAULT_MATCH_WEIGHTS).toEqual({ skills: 30, experience: 25, responsibilities: 20, seniority: 10, industry: 5, location: 10 });
+  it("defaults to 25/25/20/10/10/5/5", () => {
+    expect(DEFAULT_MATCH_WEIGHTS).toEqual({ skills: 25, experience: 25, responsibilities: 20, career: 10, seniority: 10, industry: 5, location: 5 });
   });
   it("normalises to 100 and ignores bad values", () => {
     const w = normalizeWeights({ skills: 3, experience: 1, responsibilities: 0, seniority: -5, industry: Number.NaN, location: 0 });
     expect(Object.values(w).reduce((a, b) => a + b, 0)).toBeCloseTo(100);
     expect(w.skills).toBeGreaterThan(w.experience);
-    expect(normalizeWeights({ skills: 0, experience: 0, responsibilities: 0, seniority: 0, industry: 0, location: 0 })).toEqual(DEFAULT_MATCH_WEIGHTS);
+    expect(normalizeWeights({ skills: 0, experience: 0, responsibilities: 0, career: 0, seniority: 0, industry: 0, location: 0 })).toEqual(DEFAULT_MATCH_WEIGHTS);
   });
   it("shares the weight of parts that cannot be judged among the rest", () => {
     const d = scoreJob(job("Requirements:\n- Python and SQL"), input({ preferences: undefined })).detail!;
@@ -316,38 +319,46 @@ describe("evidence", () => {
 describe("Claude's contribution is bounded", () => {
   const j = job(STRONG);
   const base = scoreJob(j, input());
-  const comp = (m: typeof base, k: string) => m.detail!.components.find((c) => c.key === k)!;
 
-  it("cannot move a score more than the limit from the rules", () => {
-    const m = scoreJob(j, input(), { experience: 0, responsibilities: 0 });
-    expect(comp(m, "experience").score!).toBeGreaterThanOrEqual(comp(base, "experience").score! - AI_LIMIT - 1);
-    expect(comp(m, "responsibilities").score!).toBeGreaterThanOrEqual(comp(base, "responsibilities").score! - AI_LIMIT - 1);
-    expect(comp(m, "experience").aiAdjusted).toBe(true);
-    expect(m.source).toBe("ai");
+  it("cannot move the final score more than the limit from the deterministic score", () => {
+    expect(AI_LIMIT).toBe(15);
+    const down = scoreJob(j, input(), { adjustment: -90 });
+    expect(down.deterministicScore).toBe(base.deterministicScore);
+    expect(down.score).toBe(base.score - 15);
+    expect(down.aiAdjustment).toBe(-15);
+    expect(down.finalScore).toBe(down.score);
+    expect(down.source).toBe("ai");
+    expect(scoreJob(j, input(), { adjustment: 90 }).score).toBeLessThanOrEqual(Math.min(100, base.score + 15));
   });
 
   it("ignores values that are not numbers", () => {
-    const m = scoreJob(j, input(), { experience: Number.NaN, responsibilities: Number.POSITIVE_INFINITY });
-    expect(comp(m, "experience").aiAdjusted).toBeUndefined();
-    expect(comp(m, "experience").score).toBe(comp(base, "experience").score);
+    for (const adjustment of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      const m = scoreJob(j, input(), { adjustment });
+      expect(m.score).toBe(base.score);
+      expect(m.aiAdjustment).toBe(0);
+    }
   });
 
   it("drops invented evidence and keeps real evidence", () => {
     const m = scoreJob(j, input(), {
+      adjustment: 0,
       evidence: ["Managed a 200 person data organisation at Amazon", "Modelled data warehouse star schemas and delivered Power BI dashboards to finance stakeholders."],
+      strengths: [{ text: "Ran a huge team", evidence: "Managed a 200 person data organisation at Amazon" }],
     });
     expect(m.detail!.evidence.join(" ")).not.toMatch(/Amazon/);
     expect(m.detail!.evidence[0]).toMatch(/star schemas/);
+    expect(JSON.stringify(m.detail!.strengths)).not.toMatch(/Amazon|huge team/);
   });
 
   it("cannot lift a capped score past its cap", () => {
     const weak = job("Requirements:\n- Scala, Kafka, Hadoop, Airflow\n- Python", { title: "Senior Data Engineer" });
-    const m = scoreJob(weak, input(), { experience: 100, responsibilities: 100 });
-    expect(m.score).toBeLessThanOrEqual(65);
+    const m = scoreJob(weak, input(), { adjustment: 15 });
+    expect(m.score).toBeLessThanOrEqual(m.detail!.capLimit!);
+    expect(m.detail!.capLimit).toBeLessThanOrEqual(65);
   });
 
   it("limits and cleans the gaps and note it accepts", () => {
-    const m = scoreJob(j, input(), { gaps: ["a", "b", "c", "d", "e"], note: "x".repeat(900) });
+    const m = scoreJob(j, input(), { adjustment: 0, gaps: ["a", "b", "c", "d", "e"], note: "x".repeat(900) });
     expect(m.detail!.experienceGaps.length).toBeLessThanOrEqual(5);
     expect(m.detail!.aiNote!.length).toBeLessThanOrEqual(500);
   });

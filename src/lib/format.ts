@@ -1,3 +1,4 @@
+import { compareByFit } from "@/lib/search/rank";
 import type { Job, Salary, SortKey } from "@/types/job";
 
 export function formatSalary(s: Salary | null): string {
@@ -35,7 +36,8 @@ export function sortJobs(jobs: Job[], key: SortKey): Job[] {
   if (key === "newest") copy.sort((a, b) => date(b) - date(a));
   else if (key === "salary") copy.sort((a, b) => (yearlySalary(b) ?? -1) - (yearlySalary(a) ?? -1));
   else if (key === "company") copy.sort((a, b) => a.company.localeCompare(b.company));
-  else copy.sort((a, b) => (b.match?.score ?? -1) - (a.match?.score ?? -1));
+  // "Highest match" keeps the server's order: jobs to verify come after those you can apply to.
+  else copy.sort(compareByFit);
   return copy;
 }
 

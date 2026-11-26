@@ -13,6 +13,7 @@ import {
   type MatchComponentKey,
   type SearchPreferences,
 } from "@/types/job";
+import { EligibilityFields, draftFacts, readFacts } from "./EligibilityFields";
 import { Notice, inputClass, primaryButton, secondaryButton } from "./ui";
 
 interface Props {
@@ -32,10 +33,11 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport, ac
   const [locations, setLocations] = useState(p.locations.join("\n"));
   const [primary, setPrimary] = useState(p.primaryRoles.join("\n"));
   const [secondary, setSecondary] = useState(p.secondaryRoles.join("\n"));
-  const initialWeights = p.weights ?? DEFAULT_MATCH_WEIGHTS;
+  const initialWeights = { ...DEFAULT_MATCH_WEIGHTS, ...p.weights };
   const [weights, setWeights] = useState<Record<MatchComponentKey, string>>(
     () => Object.fromEntries(MATCH_COMPONENTS.map((k) => [k, String(Math.round(initialWeights[k]))])) as Record<MatchComponentKey, string>,
   );
+  const [facts, setFacts] = useState(() => draftFacts(p.facts));
   const weightTotal = MATCH_COMPONENTS.reduce((n, k) => n + (Number(weights[k]) || 0), 0);
   const [savedMsg, setSavedMsg] = useState(false);
   const [pending, setPending] = useState<{ data: AppData; exportedAt: string } | null>(null);
@@ -91,7 +93,7 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport, ac
     const scaled = normalizeWeights(Object.fromEntries(MATCH_COMPONENTS.map((k) => [k, Number(weights[k]) || 0])));
     const rounded = Object.fromEntries(MATCH_COMPONENTS.map((k) => [k, Math.round(scaled[k] * 10) / 10])) as Record<MatchComponentKey, number>;
     setWeights(Object.fromEntries(MATCH_COMPONENTS.map((k) => [k, String(Math.round(rounded[k]))])) as Record<MatchComponentKey, string>);
-    onSavePreferences({ minSalary: salary, locations: lines(locations), primaryRoles: lines(primary), secondaryRoles: lines(secondary), weights: rounded });
+    onSavePreferences({ minSalary: salary, locations: lines(locations), primaryRoles: lines(primary), secondaryRoles: lines(secondary), weights: rounded, facts: readFacts(facts) });
     setSavedMsg(true);
     setTimeout(() => setSavedMsg(false), 2500);
   }
@@ -144,6 +146,7 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport, ac
         <TextList id="pref-locations" label="Cities, one per line" value={locations} onChange={setLocations} rows={5} />
         <TextList id="pref-primary" label="Primary roles, one per line" value={primary} onChange={setPrimary} rows={6} />
         <TextList id="pref-secondary" label="Secondary roles, one per line" value={secondary} onChange={setSecondary} rows={8} />
+        <EligibilityFields value={facts} onChange={setFacts} />
         <fieldset className="space-y-3">
           <legend className="text-sm font-medium">How much each part of a match counts</legend>
           <p className="text-xs text-muted">Set any numbers you like. They are scaled to 100% when you save. A part the posting gives no information about is skipped and the rest share its weight.</p>

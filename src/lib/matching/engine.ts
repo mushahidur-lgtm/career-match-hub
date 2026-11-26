@@ -1,12 +1,18 @@
+import { IMPLIED_BY, EVIDENCE_CREDIT, resumeLines, skillEvidence, type ResumeLine } from "@/lib/candidate/evidence";
+import { checkEligibility } from "@/lib/eligibility/engine";
 import { yearlySalary } from "@/lib/format";
+import { guardPosting } from "@/lib/jobs/sanitize";
+import { assessPosting } from "@/lib/jobs/status";
 import { profileSkills } from "@/lib/heuristics";
 import { canonicalSkill, dedupe, extractSkills, flattenSkills, skillPattern } from "@/lib/skills";
 import {
   DEFAULT_MATCH_WEIGHTS,
   MATCH_COMPONENTS,
   MATCH_COMPONENT_LABELS,
+  type AiReview,
+  type CandidateFacts,
   type CandidateProfile,
-  type Confidence,
+  type EvidencedPoint,
   type Job,
   type MatchComponent,
   type MatchComponentKey,
@@ -14,32 +20,43 @@ import {
   type MatchResult,
   type MatchWeights,
   type Seniority,
+  type SkillMatchItem,
 } from "@/types/job";
-import { CANADA_HINTS, CONCEPTS, FOREIGN_HINTS, INDUSTRIES, REGIONS, SKILL_FAMILIES } from "./knowledge";
+import { careerAlignment } from "./career";
+import { assessConfidence } from "./confidence";
+import { extractRequirements, LOW_CONFIDENCE } from "./extraction";
+import { CANADA_HINTS, CONCEPTS, FOREIGN_HINTS, INDUSTRIES, REGIONS } from "./knowledge";
+import { recommendedAction } from "./recommend";
 import { parseRequirements } from "./requirements";
+import { transfersFor } from "./transfer";
 
-export type MatchableJob = Pick<Job, "title" | "description" | "location" | "workMode" | "salary" | "descriptionTruncated">;
+export type MatchableJob = Pick<Job, "title" | "description" | "location" | "workMode" | "salary" | "descriptionTruncated"> &
+  Partial<Pick<Job, "postingStatus" | "source" | "applyUrl" | "postedAt">>;
 
 export interface MatchInput {
   profile: CandidateProfile;
   /** The resume text. Evidence quotes are copied from it, and it is the source for responsibilities. */
   resumeText?: string | null;
   /** `roles` are the jobs the candidate is aiming for. A target role is not held back for differing from past titles. */
-  preferences?: { locations: string[]; minSalary: number | null; roles?: string[] };
-  weights?: MatchWeights;
+  preferences?: { locations: string[]; minSalary: number | null; roles?: string[]; primaryRoles?: string[]; secondaryRoles?: string[] };
+  weights?: Partial<MatchWeights>;
+  /** Work authorization, languages, clearance and exclusions, only as the candidate stated them. */
+  facts?: CandidateFacts;
 }
 
 /** What Claude may contribute. Every value is bounded or verified before it is used. */
-export interface AiOverrides {
-  experience?: number;
-  responsibilities?: number;
+export interface AiAssessment {
+  /** Points to add to the deterministic score. Held within AI_LIMIT. */
+  adjustment: number;
   evidence?: string[];
+  strengths?: { text: string; evidence: string }[];
   gaps?: string[];
   note?: string;
+  review?: Omit<AiReview, "status">;
 }
 
-/** Claude can move a contextual score at most this far from the rule-based value. */
-export const AI_LIMIT = 25;
+/** Claude can move the final score at most this many points from the deterministic score. */
+export const AI_LIMIT = 15;
 
 const clamp = (n: number, lo = 0, hi = 100) => Math.min(hi, Math.max(lo, n));
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -144,51 +161,75 @@ function pickEvidence(resumeText: string, skills: string[]): string[] {
     .map((x) => x.line.slice(0, 220));
 }
 
+/* ---------- skills ---------- */
+
+const PREFERRED_WEIGHT = 0.4;
+
+function matchSkill(skill: string, importance: "required" | "preferred", has: (s: string) => boolean, lines: ResumeLine[]) {
+  const implied = (IMPLIED_BY[skill] ?? []).filter(has);
+  const onProfile = has(skill) || implied.length > 0;
+  const direct = skillEvidence(skill, lines, onProfile, implied);
+  const directCredit = EVIDENCE_CREDIT[direct.level];
+
+  // A related skill earns its relation's share of what the resume shows for that skill, so at the same level of
+  // evidence it is always worth less than the skill itself.
+  let best: { credit: number; via: string; why: string; level: SkillMatchItem["level"]; refs: SkillMatchItem["evidence"] } | null = null;
+  for (const t of transfersFor(skill, has)) {
+    const e = skillEvidence(t.via, lines, true);
+    const credit = t.credit * EVIDENCE_CREDIT[e.level];
+    if (!best || credit > best.credit) best = { credit, via: t.via, why: t.why, level: e.level, refs: e.refs };
+  }
+
+  const useRelated = best !== null && best.credit > directCredit;
+  const item: SkillMatchItem = {
+    skill,
+    importance,
+    level: direct.level,
+    credit: Math.round((useRelated ? best!.credit : directCredit) * 100) / 100,
+    ...(useRelated ? { via: best!.via, relation: best!.why } : {}),
+    evidence: useRelated && !onProfile ? best!.refs : direct.refs,
+  };
+  return { item, onProfile, related: onProfile ? null : best };
+}
+
 /* ---------- the engine ---------- */
 
-export function scoreJob(job: MatchableJob, input: MatchInput, overrides?: AiOverrides): MatchResult {
-  const { profile, resumeText, preferences } = input;
+export function scoreJob(job: MatchableJob, input: MatchInput, ai?: AiAssessment): MatchResult {
+  const { profile, resumeText, preferences, facts } = input;
   const weights = normalizeWeights(input.weights);
-  const text = `${job.title}\n${job.description}`;
-  const req = parseRequirements(job.title, job.description);
+  const extracted = extractRequirements(job);
+  const description = guardPosting(job.description).clean;
+  const text = `${job.title}\n${description}`;
+  const req = parseRequirements(job.title, description);
+  const lines = resumeText?.trim() ? resumeLines(resumeText) : [];
+  const postingStatus =
+    job.postingStatus ??
+    assessPosting({ description: job.description, descriptionTruncated: job.descriptionTruncated, postedAt: job.postedAt ?? null, source: job.source ?? "adzuna", applyUrl: job.applyUrl ?? null }, new Date(0)).status;
+  const eligibility = checkEligibility(job.title, description, facts);
 
   const mine = profileSkills(profile.skills);
   const mineSet = new Set(mine.map((s) => s.toLowerCase()));
   const has = (skill: string) => mineSet.has(canonicalSkill(skill).toLowerCase());
 
   /* technical skills */
-  const transferable: { skill: string; via: string }[] = [];
-  const credit = (skill: string): number => {
-    if (has(skill)) return 1;
-    let best = 0;
-    for (const fam of SKILL_FAMILIES) {
-      if (!fam.skills.some((s) => s.toLowerCase() === skill.toLowerCase())) continue;
-      const via = fam.skills.find((s) => s.toLowerCase() !== skill.toLowerCase() && has(s));
-      if (via && fam.credit > best) {
-        best = fam.credit;
-        const existing = transferable.findIndex((t) => t.skill === skill);
-        if (existing >= 0) transferable.splice(existing, 1);
-        transferable.push({ skill, via });
-      }
-    }
-    return best;
-  };
+  const required = req.required.map((s) => matchSkill(s, "required", has, lines));
+  const preferred = req.preferred.map((s) => matchSkill(s, "preferred", has, lines));
+  const everySkill = [...required, ...preferred];
+  const requiredMatched = required.filter((x) => x.onProfile).map((x) => x.item.skill);
+  const preferredMatched = preferred.filter((x) => x.onProfile).map((x) => x.item.skill);
+  const requiredMissing = required.filter((x) => !x.onProfile && !x.related).map((x) => x.item.skill);
+  const preferredMissing = preferred.filter((x) => !x.onProfile && !x.related).map((x) => x.item.skill);
+  const transferable = everySkill.filter((x) => x.related).map((x) => ({ skill: x.item.skill, via: x.related!.via, why: x.related!.why, credit: x.item.credit }));
+  // Coverage counts what the candidate has at all; how well it is shown is reflected in the score itself.
+  const reqCoverage = required.length ? required.reduce((n, x) => n + (x.onProfile ? 1 : x.item.credit), 0) / required.length : null;
+  const sum = (xs: typeof required) => xs.reduce((n, x) => n + x.item.credit, 0);
+  const listedOnly = required.filter((x) => x.onProfile && x.item.level === "listed" && !x.item.via).map((x) => x.item.skill);
 
-  const reqCredits = req.required.map((s) => ({ s, c: credit(s) }));
-  const prefCredits = req.preferred.map((s) => ({ s, c: credit(s) }));
-  const requiredMatched = reqCredits.filter((x) => x.c === 1).map((x) => x.s);
-  const preferredMatched = prefCredits.filter((x) => x.c === 1).map((x) => x.s);
-  const requiredMissing = reqCredits.filter((x) => x.c === 0).map((x) => x.s);
-  const preferredMissing = prefCredits.filter((x) => x.c === 0).map((x) => x.s);
-  const reqCoverage = reqCredits.length ? reqCredits.reduce((n, x) => n + x.c, 0) / reqCredits.length : null;
-
-  const skillWeight = reqCredits.length + 0.4 * prefCredits.length;
-  const skillsScore = skillWeight
-    ? (100 * (reqCredits.reduce((n, x) => n + x.c, 0) + 0.4 * prefCredits.reduce((n, x) => n + x.c, 0))) / skillWeight
-    : null;
+  const skillWeight = required.length + PREFERRED_WEIGHT * preferred.length;
+  const skillsScore = skillWeight ? (100 * (sum(required) + PREFERRED_WEIGHT * sum(preferred))) / skillWeight : null;
   const skillsNote = !skillWeight
     ? "The posting does not name technical skills that could be read."
-    : `${requiredMatched.length} of ${reqCredits.length} required${prefCredits.length ? ` and ${preferredMatched.length} of ${prefCredits.length} preferred` : ""} skills matched${transferable.length ? `, ${transferable.length} related` : ""}.`;
+    : `${requiredMatched.length} of ${required.length} required${preferred.length ? ` and ${preferredMatched.length} of ${preferred.length} preferred` : ""} skills matched${transferable.length ? `, ${transferable.length} related` : ""}.${listedOnly.length ? ` ${list(listedOnly, 3)} only listed, with no work shown.` : ""}`;
 
   /* relevant experience */
   const years = profile.yearsOfExperience;
@@ -206,7 +247,8 @@ export function scoreJob(job: MatchableJob, input: MatchInput, overrides?: AiOve
       : `Title ${roleFit >= 0.8 ? "matches" : roleFit >= 0.4 ? "is close to" : "differs from"} your roles. The posting states no years.`;
 
   /* responsibilities */
-  const resumeBasis = resumeText?.trim() || `${profile.summary}\n${mine.join(" ")}\n${profile.detectedRoles.join(" ")}`;
+  const shown = lines.filter((l) => l.level === "professional" || l.level === "project").map((l) => l.text);
+  const resumeBasis = shown.length ? shown.join("\n") : resumeText?.trim() || `${profile.summary}\n${mine.join(" ")}\n${profile.detectedRoles.join(" ")}`;
   const dutyText = `${job.title}\n${req.duties}`;
   const jobConcepts = CONCEPTS.map((c) => ({ c, n: conceptCount(dutyText, c.pattern) })).filter((x) => x.n > 0);
   let responsibilitiesRule: number | null = null;
@@ -296,17 +338,15 @@ export function scoreJob(job: MatchableJob, input: MatchInput, overrides?: AiOve
     }
   }
 
-  /* optional, bounded contributions from Claude */
-  const bound = (rule: number | null, ai: number | undefined) =>
-    rule !== null && typeof ai === "number" && Number.isFinite(ai) ? clamp(ai, Math.max(0, rule - AI_LIMIT), Math.min(100, rule + AI_LIMIT)) : null;
-  const aiExperience = bound(experienceRule, overrides?.experience);
-  const aiResponsibilities = bound(responsibilitiesRule, overrides?.responsibilities);
+  /* career alignment: only from what the candidate said they want */
+  const career = careerAlignment({ title: job.title, description }, preferences, facts?.exclusions ?? [], titleSimilarity);
 
   /* combine */
   const rawScores: Record<MatchComponentKey, number | null> = {
     skills: skillsScore,
-    experience: aiExperience ?? experienceRule,
-    responsibilities: aiResponsibilities ?? responsibilitiesRule,
+    experience: experienceRule,
+    responsibilities: responsibilitiesRule,
+    career: career.score,
     seniority: seniorityScore,
     industry: industryScore,
     location: locationScore,
@@ -315,6 +355,7 @@ export function scoreJob(job: MatchableJob, input: MatchInput, overrides?: AiOve
     skills: skillsNote,
     experience: experienceNote,
     responsibilities: responsibilitiesNote,
+    career: career.note,
     seniority: seniority.note,
     industry: industryNote,
     location: location.note,
@@ -327,57 +368,103 @@ export function scoreJob(job: MatchableJob, input: MatchInput, overrides?: AiOve
     weight: rawScores[k] === null ? 0 : Math.round(((weights[k] / totalWeight) * 100) * 10) / 10,
     score: rawScores[k] === null ? null : Math.round(rawScores[k]!),
     note: notes[k],
-    ...((k === "experience" && aiExperience !== null) || (k === "responsibilities" && aiResponsibilities !== null) ? { aiAdjusted: true } : {}),
   }));
   const weighted = applicable.reduce((n, k) => n + (rawScores[k]! * weights[k]) / totalWeight, 0);
 
-  /* confidence: how much the posting and the resume give us to judge by */
-  const reasons: string[] = [];
-  let pts = 0;
-  const note = (points: number, reason: string) => {
-    pts += points;
-    reasons.push(reason);
-  };
-  const len = job.description.length;
-  if (len >= 1200) note(2, "Full job description available.");
-  else if (len >= 500) note(1, "Moderate-length job description.");
-  else note(0, "Short job description.");
-  if (job.descriptionTruncated) note(-1, "The job board only provides the first part of the posting.");
-  if (req.structured) note(1, "Required and preferred skills could be told apart.");
-  else note(0, "No requirements section found, so every skill is treated as required.");
-  if (reqCredits.length >= 3) note(1, `${reqCredits.length} required skills found to compare.`);
-  else note(0, "Few skills named in the posting.");
-  if (years !== null) note(1, "Your years of experience are known.");
-  else note(0, "Your years of experience are unknown.");
-  if (resumeText?.trim()) note(1, "Compared against your full resume text.");
-  else note(0, "Compared against your profile only, not the resume text.");
-  if (applicable.length >= 5) note(1, "Five or more parts of the match could be judged.");
-  const confidence: Confidence = pts >= 6 ? "high" : pts >= 3 ? "medium" : "low";
+  /* confidence: how much there was to judge by. Never part of the score. */
+  const evidenceLines = resumeText ? pickEvidence(resumeText, [...requiredMatched, ...preferredMatched]) : [];
+  const confidence = assessConfidence({
+    descriptionLength: description.length,
+    truncated: job.descriptionTruncated,
+    structured: req.structured,
+    requiredCount: required.length,
+    extractionConfidence: extracted.confidence,
+    hasResumeText: Boolean(resumeText?.trim()),
+    hasWorkEvidence: lines.some((l) => l.level === "professional"),
+    yearsKnown: years !== null,
+    profileSkillCount: mine.length,
+    evidenceCount: evidenceLines.length,
+    judgedComponents: applicable.length,
+    postingStatus,
+    aiApplied: Boolean(ai),
+  });
+
+  /* flags: doubts about the analysis itself */
+  const flags: string[] = [];
+  const unsure = extracted.items.filter((i) => i.kind === "skill" && i.confidence < LOW_CONFIDENCE).length;
+  if (extracted.items.some((i) => i.kind === "skill") && extracted.confidence < LOW_CONFIDENCE) flags.push("The requirements were read with low confidence.");
+  else if (unsure) flags.push(`${unsure} requirement${unsure === 1 ? " was" : "s were"} read with low confidence.`);
+  if (description.length < 400) flags.push("The posting is very thin, so little can be concluded from it.");
+  if (extracted.suspicious.length) flags.push("The posting contains text that reads like instructions to an AI. It was ignored.");
+  if (!resumeText?.trim()) flags.push("No resume text was available, so no skill could be shown by your work.");
 
   /* caps: keyword overlap alone must not produce a high score */
   const caps: { limit: number; reason: string }[] = [];
-  if (reqCredits.length >= 3 && reqCoverage !== null && reqCoverage < 0.5) caps.push({ limit: 65, reason: "fewer than half of the required skills are matched" });
-  if (reqCredits.length >= 2 && requiredMatched.length === 0) caps.push({ limit: 55, reason: "none of the required skills is on your resume" });
+  // Weighted by evidence: skills that are merely listed or related do not make up half of what a posting requires.
+  const shownCoverage = required.length ? sum(required) / required.length : null;
+  if (required.length >= 3 && shownCoverage !== null && shownCoverage < 0.5) caps.push({ limit: 65, reason: "fewer than half of the required skills are matched by what your resume shows" });
+  if (required.length >= 2 && requiredMatched.length === 0) caps.push({ limit: 55, reason: "none of the required skills is on your resume" });
   const targetFit = titleSimilarity(job.title, preferences?.roles ?? []);
   if (roleFit < 0.25 && targetFit < 0.5 && (reqCoverage ?? 0) < 0.8) caps.push({ limit: 60, reason: "the role is outside the work on your resume" });
+  if (required.length >= 3 && (reqCoverage ?? 0) >= 0.6 && responsibilitiesRule !== null && responsibilitiesRule < 40) caps.push({ limit: 60, reason: "the skill words match but the day-to-day work does not" });
   if (seniorityGap >= 3) caps.push({ limit: 55, reason: "the role is far more senior than your resume" });
+  else if (seniorityGap === 2) caps.push({ limit: 70, reason: "the role is well above your level" });
+  else if (seniorityGap <= -2) caps.push({ limit: 65, reason: "the role is well below your level" });
   if (location.status === "no") caps.push({ limit: 69, reason: "the job is outside your preferred cities" });
-  if (confidence === "low" || reqCredits.length < 3) caps.push({ limit: 89, reason: "the posting gives too little detail to call this excellent" });
+  if (career.excludedTerm) caps.push({ limit: 50, reason: `it mentions "${career.excludedTerm}", which you excluded` });
+  // Decided from the posting alone. Confidence also counts the AI review and posting status, which must never move a score.
+  const thinPosting = description.length < 200 || (description.length < 500 && (job.descriptionTruncated || !req.structured));
+  if (thinPosting || required.length < 3) caps.push({ limit: 89, reason: "the posting gives too little detail to call this excellent" });
   const limit = caps.length ? Math.min(...caps.map((c) => c.limit)) : 100;
-  const score = Math.round(clamp(Math.min(weighted, limit)));
-  const appliedCaps = weighted > limit ? caps.filter((c) => c.limit === limit).map((c) => `Held to ${limit}: ${c.reason}.`) : [];
 
-  /* evidence */
-  const detEvidence = resumeText ? pickEvidence(resumeText, [...requiredMatched, ...preferredMatched]) : [];
-  const evidence = dedupe([...verifyQuotes(overrides?.evidence, resumeText), ...detEvidence]).slice(0, 4);
-  const aiGaps = (overrides?.gaps ?? []).map((g) => g.replace(/\s+/g, " ").trim().slice(0, 200)).filter(Boolean).slice(0, 3);
+  /* deterministic score, then Claude's bounded adjustment, then the caps again */
+  const deterministicScore = Math.round(clamp(Math.min(weighted, limit)));
+  const aiAdjustment = ai && Number.isFinite(ai.adjustment) ? Math.round(clamp(ai.adjustment, -AI_LIMIT, AI_LIMIT)) : 0;
+  const score = Math.round(clamp(Math.min(deterministicScore + aiAdjustment, limit)));
+  const held = weighted > limit || deterministicScore + aiAdjustment > limit;
+  const appliedCaps = held ? caps.filter((c) => c.limit === limit).map((c) => `Held to ${limit}: ${c.reason}.`) : [];
+
+  /* evidence, strengths and gaps */
+  const evidence = dedupe([...verifyQuotes(ai?.evidence, resumeText), ...evidenceLines]).slice(0, 4);
+  const clean = (g: string) => g.replace(/\s+/g, " ").trim().slice(0, 200);
+  const aiGaps = (ai?.gaps ?? []).map(clean).filter(Boolean).slice(0, 3);
   const allGaps = dedupe([...experienceGaps, ...aiGaps]).slice(0, 5);
+  const postingLine = (skill: string) => extracted.items.find((i) => i.kind === "skill" && i.value.toLowerCase() === skill.toLowerCase())?.evidence;
+  const asEvidence = (line: string | undefined) => (line ? [`Posting: ${line.slice(0, 280)}`] : []);
+
+  const strengths: EvidencedPoint[] = everySkill
+    .filter((x) => x.onProfile && (x.item.level === "professional" || x.item.level === "project") && x.item.evidence.length)
+    .slice(0, 8)
+    .map((x) => ({ text: `${x.item.skill}: shown in your ${x.item.level === "professional" ? "work experience" : "projects"}.`, evidence: [x.item.evidence[0].quote], source: "rules" as const }));
+  // Claude's strengths count only when the line it points to is really on the resume.
+  for (const s of (ai?.strengths ?? []).slice(0, 3)) {
+    const quote = verifyQuotes([s.evidence], resumeText);
+    if (quote.length && clean(s.text)) strengths.push({ text: clean(s.text), evidence: quote, source: "ai" });
+  }
+
+  const gaps: EvidencedPoint[] = [
+    ...experienceGaps.map((g) => ({ text: g, evidence: [], source: "rules" as const })),
+    ...requiredMissing.map((s) => ({ text: `${s} is required and not on your resume.`, evidence: asEvidence(postingLine(s)), source: "rules" as const })),
+    ...transferable.filter((t) => req.required.includes(t.skill)).map((t) => ({ text: `${t.skill} is required. You have ${t.via}, which is related but not the same. ${t.why}`, evidence: asEvidence(postingLine(t.skill)), source: "rules" as const })),
+    ...required
+      .filter((x) => x.onProfile && !x.item.via && (x.item.level === "listed" || x.item.level === "learning"))
+      .map((x) => ({
+        text: x.item.level === "listed" ? `${x.item.skill} is only listed on your resume; no work or project shows it.` : `${x.item.skill} appears only as study or training on your resume.`,
+        evidence: asEvidence(postingLine(x.item.skill)),
+        source: "rules" as const,
+      })),
+    ...aiGaps.map((g) => ({ text: g, evidence: [], source: "ai" as const })),
+  ].slice(0, 15);
 
   /* explanation */
   const verdict = score >= 90 ? "Excellent match" : score >= 70 ? "Strong match" : score >= 50 ? "Partial match" : "Weak match";
   const parts: string[] = [`${verdict}.`];
-  if (reqCredits.length) parts.push(`You have ${requiredMatched.length} of ${reqCredits.length} required skills${requiredMatched.length ? ` (${list(requiredMatched, 4)})` : ""}.`);
+  if (eligibility.status === "not_eligible") parts.unshift(`Not eligible: ${eligibility.reason}`);
+  else if (eligibility.status === "needs_verification") parts.push(`Check first: ${eligibility.reason}`);
+  if (postingStatus === "expired") parts.push("The posting appears to be closed.");
+  if (required.length) parts.push(`You have ${requiredMatched.length} of ${required.length} required skills${requiredMatched.length ? ` (${list(requiredMatched, 4)})` : ""}.`);
   else parts.push("The posting names no required skills that could be read.");
+  if (listedOnly.length) parts.push(`${list(listedOnly, 3)} ${listedOnly.length === 1 ? "is" : "are"} only listed, not shown in your work.`);
   for (const t of transferable.filter((x) => req.required.includes(x.skill)).slice(0, 2)) parts.push(`${t.skill} is not on your resume, but your ${t.via} experience is related.`);
   if (requiredMissing.length) parts.push(`Missing: ${list(requiredMissing, 4)}.`);
   if (seniority.status !== "unknown") parts.push(seniority.note);
@@ -387,22 +474,29 @@ export function scoreJob(job: MatchableJob, input: MatchInput, overrides?: AiOve
   const explanation = parts.join(" ");
 
   const detail: MatchDetail = {
-    confidence,
-    confidenceReasons: reasons,
+    confidence: confidence.label,
+    confidenceReasons: confidence.reasons,
+    confidenceScore: confidence.score,
     requiredMatched,
     requiredMissing,
     preferredMatched,
     preferredMissing,
     transferable,
+    skillEvidence: everySkill.map((x) => x.item),
     evidence,
     experienceGaps: allGaps,
+    strengths,
+    gaps,
+    careerAlignment: { score: career.score, note: career.note, role: career.role },
     seniority,
     location,
     salary,
     components,
     caps: appliedCaps,
+    capLimit: caps.length ? limit : null,
+    flags,
     explanation,
-    ...(overrides?.note ? { aiNote: overrides.note.replace(/\s+/g, " ").trim().slice(0, 500) } : {}),
+    ...(ai?.note ? { aiNote: ai.note.replace(/\s+/g, " ").trim().slice(0, 500) } : {}),
   };
 
   return {
@@ -410,8 +504,15 @@ export function scoreJob(job: MatchableJob, input: MatchInput, overrides?: AiOve
     matchingSkills: dedupe([...requiredMatched, ...preferredMatched]),
     missingSkills: requiredMissing,
     matchReason: explanation,
-    source: overrides ? "ai" : "heuristic",
+    source: ai ? "ai" : "heuristic",
     detail,
+    deterministicScore,
+    aiAdjustment: score - deterministicScore,
+    finalScore: score,
+    eligibility,
+    postingStatus,
+    recommendedAction: recommendedAction({ score, confidence: confidence.label, eligibility: eligibility.status, postingStatus, missingRequired: requiredMissing.length }),
+    ai: ai ? { ...ai.review, status: "applied" } : { status: "unavailable" },
   };
 }
 

@@ -10,7 +10,8 @@ const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Matches whole tokens only, so "Java" never matches "JavaScript" and "C" never matches "C++". */
 export function termPattern(terms: string[], flags = "i"): RegExp {
-  const body = terms.map((t) => escape(t).replace(/ /g, "[\\s-]+")).join("|");
+  // Longest first, so "ASP.NET Core" is read whole rather than as "ASP.NET" followed by a stray word.
+  const body = [...terms].sort((a, b) => b.length - a.length).map((t) => escape(t).replace(/ /g, "[\\s-]+")).join("|");
   return new RegExp(`(?<![A-Za-z0-9+#&])(?:${body})(?![A-Za-z0-9+#&])`, flags);
 }
 
@@ -57,7 +58,7 @@ add("frameworks", [
 
 add("cloudData", [
   ["AWS", "Amazon Web Services"], ["Azure", "Microsoft Azure"], ["GCP", "Google Cloud", "Google Cloud Platform"],
-  "Azure Data Factory", ["Azure Synapse", "Synapse"], "Azure DevOps", ["Microsoft Fabric", "MS Fabric"], "Snowflake", "Databricks",
+  "Azure Data Factory", ["Azure SQL", "Azure SQL Database"], ["Azure Synapse", "Synapse"], "Azure DevOps", ["Microsoft Fabric", "MS Fabric"], "Snowflake", "Databricks",
   ["BigQuery", "Big Query"], ["Redshift", "Amazon Redshift"], ["Apache Spark", "Spark"], ["Kafka", "Apache Kafka"],
   ["Airflow", "Apache Airflow"], "dbt", "Hadoop", "Hive", ["PostgreSQL", "Postgres"], "MySQL", ["SQL Server", "MS SQL", "MSSQL"],
   "MongoDB", "Redis", "Cassandra", "DynamoDB", ["Elasticsearch", "Elastic Search"], ["Cosmos DB", "CosmosDB"], "Delta Lake",

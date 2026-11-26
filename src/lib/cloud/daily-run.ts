@@ -1,9 +1,11 @@
 import "server-only";
 import { jobKey } from "@/lib/backup";
 import { observe } from "@/lib/history";
-import { scoreJob, type MatchInput } from "@/lib/matching/engine";
+import { scoreJob } from "@/lib/matching/engine";
 import { fetchJobs, type ProviderResult } from "@/lib/providers";
 import { applyFilters } from "@/lib/providers/common";
+import { toMatchInput } from "@/lib/search/match-input";
+import { compareByFit, rankTier } from "@/lib/search/rank";
 import type { Job, ResumeVersion, SearchFilters, SearchPreferences } from "@/types/job";
 import type { DailyPayload, TopJob } from "./daily-payload";
 import { planQueries } from "./schedule";
@@ -35,14 +37,7 @@ export async function runDaily(
   if (!queries.length) return { ok: false, reason: "Add primary roles and cities in Settings first." };
 
   const profile = input.resume?.profile ?? null;
-  const match: MatchInput | null = profile
-    ? {
-        profile,
-        resumeText: input.resume?.text ?? null,
-        preferences: { locations: input.preferences.locations, minSalary: input.preferences.minSalary, roles: [...input.preferences.primaryRoles, ...input.preferences.secondaryRoles] },
-        weights: input.preferences.weights,
-      }
-    : null;
+  const match = profile ? toMatchInput(profile, input.resume?.text ?? null, input.preferences) : null;
 
   const started = deps.now();
   const unique = new Map<string, Job>();
@@ -84,8 +79,8 @@ export async function runDaily(
   // A run keeps at most this many distinct postings, best first, so one morning cannot flood the history.
   const jobs = [...unique.values()].sort((a, b) => (b.match?.score ?? -1) - (a.match?.score ?? -1)).slice(0, MAX_JOBS_PER_RUN);
   const top: TopJob[] = jobs
-    .filter((j) => j.match)
-    .sort((a, b) => b.match!.score - a.match!.score)
+    .filter((j) => j.match && rankTier(j) < 2)
+    .sort(compareByFit)
     .slice(0, 10)
     .map((j) => ({
       title: j.title.slice(0, 200),

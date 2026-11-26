@@ -12,6 +12,13 @@ import {
   MATCH_COMPONENTS,
   SENIORITY_LEVELS,
   WORK_MODES,
+  CLEARANCE_LEVELS,
+  EVIDENCE_LEVELS,
+  LANGUAGE_LEVELS,
+  POSTING_STATUSES,
+  RECOMMENDED_ACTIONS,
+  RESUME_SECTIONS,
+  WORK_AUTHORIZATIONS,
 } from "@/types/job";
 
 /**
@@ -87,9 +94,17 @@ export const WeightsSchema = z.object({
   skills: z.number().min(0).max(1000),
   experience: z.number().min(0).max(1000),
   responsibilities: z.number().min(0).max(1000),
+  career: z.number().min(0).max(1000).optional(),
   seniority: z.number().min(0).max(1000),
   industry: z.number().min(0).max(1000),
   location: z.number().min(0).max(1000),
+});
+
+export const FactsSchema = z.object({
+  workAuthorization: z.enum(WORK_AUTHORIZATIONS).nullable().optional(),
+  languages: z.array(z.object({ language: str(40), level: z.enum(LANGUAGE_LEVELS) })).max(20).optional(),
+  clearance: z.enum(CLEARANCE_LEVELS).nullable().optional(),
+  exclusions: z.array(str(60)).max(30).optional(),
 });
 
 export const PreferencesSchema = z.object({
@@ -98,9 +113,39 @@ export const PreferencesSchema = z.object({
   primaryRoles: strList(60),
   secondaryRoles: strList(60),
   weights: WeightsSchema.optional(),
+  facts: FactsSchema.optional(),
 });
 
 const noteList = z.array(str(400)).max(40);
+const PointSchema = z.object({ text: str(600), evidence: z.array(str(400)).max(5), source: z.enum(["rules", "ai"]) });
+
+export const EligibilitySchema = z.object({
+  status: z.enum(["eligible", "not_eligible", "needs_verification", "not_applicable"]),
+  checks: z
+    .array(
+      z.object({
+        gate: z.enum(["citizenship", "work_authorization", "sponsorship", "clearance", "language"]),
+        status: z.enum(["eligible", "not_eligible", "needs_verification", "not_applicable"]),
+        postingEvidence: str(400),
+        candidateEvidence: str(400).nullable(),
+        note: str(400),
+      }),
+    )
+    .max(30),
+  reason: str(3000),
+});
+
+const AiReviewSchema = z.object({
+  status: z.enum(["applied", "unavailable", "not_shortlisted", "failed"]),
+  model: str(100).optional(),
+  promptVersion: str(40).optional(),
+  at: iso.optional(),
+  confidence: z.enum(["high", "medium", "low"]).optional(),
+  rationale: str(600).optional(),
+  concerns: z.array(str(300)).max(5).optional(),
+  dimensions: z.object({ experience: z.number(), responsibilities: z.number(), transferable: z.number(), career: z.number(), domain: z.number() }).optional(),
+});
+
 export const MatchDetailSchema = z.object({
   confidence: z.enum(["high", "medium", "low"]),
   confidenceReasons: noteList,
@@ -108,7 +153,7 @@ export const MatchDetailSchema = z.object({
   requiredMissing: strList(),
   preferredMatched: strList(),
   preferredMissing: strList(),
-  transferable: z.array(z.object({ skill: str(120), via: str(120) })).max(100),
+  transferable: z.array(z.object({ skill: str(120), via: str(120), why: str(400).optional(), credit: z.number().optional() })).max(100),
   evidence: noteList,
   experienceGaps: noteList,
   seniority: z.object({ status: z.enum(["aligned", "stretch", "overqualified", "unknown"]), note: str(400) }),
@@ -129,6 +174,26 @@ export const MatchDetailSchema = z.object({
   caps: noteList,
   explanation: str(3000),
   aiNote: str(1000).optional(),
+  confidenceScore: z.number().min(0).max(100).optional(),
+  skillEvidence: z
+    .array(
+      z.object({
+        skill: str(120),
+        importance: z.enum(["required", "preferred", "optional"]),
+        level: z.enum(EVIDENCE_LEVELS),
+        credit: z.number().min(0).max(1),
+        via: str(120).optional(),
+        relation: str(400).optional(),
+        evidence: z.array(z.object({ section: z.enum(RESUME_SECTIONS), quote: str(300) })).max(4),
+      }),
+    )
+    .max(200)
+    .optional(),
+  strengths: z.array(PointSchema).max(20).optional(),
+  gaps: z.array(PointSchema).max(30).optional(),
+  careerAlignment: z.object({ score: z.number().nullable(), note: str(600), role: str(200).nullable() }).optional(),
+  capLimit: z.number().nullable().optional(),
+  flags: noteList.optional(),
 });
 
 export const MatchSchema = z.object({
@@ -138,6 +203,13 @@ export const MatchSchema = z.object({
   matchReason: str(3000),
   source: z.enum(["ai", "heuristic"]),
   detail: MatchDetailSchema.optional(),
+  deterministicScore: z.number().min(0).max(100).optional(),
+  aiAdjustment: z.number().min(-15).max(15).optional(),
+  finalScore: z.number().min(0).max(100).optional(),
+  eligibility: EligibilitySchema.optional(),
+  postingStatus: z.enum(POSTING_STATUSES).optional(),
+  recommendedAction: z.enum(RECOMMENDED_ACTIONS).optional(),
+  ai: AiReviewSchema.optional(),
 });
 
 export const JobSchema = z.object({
@@ -165,6 +237,9 @@ export const JobSchema = z.object({
   match: MatchSchema.nullable(),
   duplicateCount: z.number().int().min(0).max(1000).optional(),
   otherApplyUrls: z.array(str(2000)).max(5).optional(),
+  retrievedAt: iso.optional(),
+  postingStatus: z.enum(POSTING_STATUSES).optional(),
+  postingNotes: z.array(str(200)).max(10).optional(),
 });
 
 /** Accepts the statuses used before the pipeline grew (Saved, Interviewing) and reads them as the current ones. */
