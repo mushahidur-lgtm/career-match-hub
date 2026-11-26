@@ -30,11 +30,21 @@ export function countriesFor(location: string): ("ca" | "us")[] {
 
 export const cityOf = (location: string) => location.split(",")[0].trim();
 
+/** Comments and script or style blocks are never visible to a reader, so their text is not part of the posting. */
+function dropHidden(html: string): string {
+  let text = html;
+  let before: string;
+  // Repeated until nothing changes: removing one block can join the pieces of another.
+  do {
+    before = text;
+    text = text.replace(/<!--[\s\S]*?(?:-->|$)|<(script|style|noscript|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "");
+  } while (text !== before);
+  // An opening tag that is never closed loses its angle bracket, so it cannot survive as markup.
+  return text.replace(/<+(?=(?:script|style)\b)/gi, "");
+}
+
 export function stripHtml(html: string): string {
-  return html
-    // Comments and script or style blocks are never visible to a reader, so their text is not part of the posting.
-    .replace(/<!--[\s\S]*?(?:-->|$)/g, "")
-    .replace(/<(script|style|noscript|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "")
+  return dropHidden(html)
     .replace(/<\s*(?:br|\/p|\/li|\/div|\/h\d)\s*\/?>/gi, "\n")
     .replace(/<li[^>]*>/gi, "• ")
     .replace(/<[^>]+>/g, "")

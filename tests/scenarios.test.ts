@@ -303,6 +303,11 @@ describe("posting status, normalization and dedup", () => {
   it("drops hidden HTML text", () => {
     expect(stripHtml("<p>Visible</p><!-- hidden words --><script>alert(1)</script>")).toBe("Visible");
   });
+  it("leaves no script tag behind when blocks are nested or unclosed", () => {
+    for (const html of ["<scr<!-- x -->ipt>alert(1)</script>ok", "<<script></script>script ok", "ok <script", "ok <<script x"]) {
+      expect(stripHtml(html)).not.toMatch(/<script/i);
+    }
+  });
   it("merges the same job across providers and prefers the employer's complete text", () => {
     const base = { title: "Developer", company: "Acme Inc.", location: "Toronto, ON" };
     const merged = mergeDuplicates([
