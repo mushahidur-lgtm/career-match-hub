@@ -111,27 +111,130 @@ export interface Salary {
 }
 
 /** How much each part of a match counts toward the 0-100 score. Normalised, so only the ratios matter. */
-export const MATCH_COMPONENTS = ["skills", "experience", "responsibilities", "seniority", "industry", "location"] as const;
+export const MATCH_COMPONENTS = ["skills", "experience", "responsibilities", "career", "seniority", "industry", "location"] as const;
 export type MatchComponentKey = (typeof MATCH_COMPONENTS)[number];
 export type MatchWeights = Record<MatchComponentKey, number>;
 
+/**
+ * The central, configurable weights. `industry` keeps its storage key and is shown as "Domain".
+ * `career` (alignment with the roles you said you want) was added in v2; weights saved before it existed read it as the default.
+ */
 export const DEFAULT_MATCH_WEIGHTS: MatchWeights = {
-  skills: 30,
+  skills: 25,
   experience: 25,
   responsibilities: 20,
+  career: 10,
   seniority: 10,
   industry: 5,
-  location: 10,
+  location: 5,
 };
 
 export const MATCH_COMPONENT_LABELS: Record<MatchComponentKey, string> = {
   skills: "Technical skills",
   experience: "Relevant experience",
   responsibilities: "Responsibilities",
+  career: "Career alignment",
   seniority: "Seniority",
-  industry: "Industry",
+  industry: "Domain",
   location: "Location and work arrangement",
 };
+
+/* ---------- v2: evidence, eligibility, posting status ---------- */
+
+/** How strongly the resume shows a skill. Only work under an employer is "professional"; a skills list alone is "listed". */
+export const EVIDENCE_LEVELS = ["professional", "project", "learning", "listed", "missing"] as const;
+export type EvidenceLevel = (typeof EVIDENCE_LEVELS)[number];
+
+export const RESUME_SECTIONS = ["experience", "projects", "education", "certifications", "skills", "summary", "other"] as const;
+export type ResumeSection = (typeof RESUME_SECTIONS)[number];
+
+export interface EvidenceRef {
+  section: ResumeSection;
+  /** A line copied from the resume. */
+  quote: string;
+}
+
+export type RequirementImportance = "required" | "preferred" | "optional";
+
+/** One skill the posting asks for and what the resume shows for it. */
+export interface SkillMatchItem {
+  skill: string;
+  importance: RequirementImportance;
+  level: EvidenceLevel;
+  /** 0 to 1: share of full credit given. */
+  credit: number;
+  /** Set when the credit comes from a related skill rather than this one. */
+  via?: string;
+  relation?: string;
+  evidence: EvidenceRef[];
+}
+
+export const WORK_AUTHORIZATIONS = ["citizen", "permanent_resident", "work_permit", "needs_sponsorship"] as const;
+export type WorkAuthorization = (typeof WORK_AUTHORIZATIONS)[number];
+export const LANGUAGE_LEVELS = ["basic", "intermediate", "professional", "fluent", "native"] as const;
+export type LanguageLevel = (typeof LANGUAGE_LEVELS)[number];
+export const CLEARANCE_LEVELS = ["none", "reliability", "secret", "top_secret"] as const;
+export type ClearanceLevel = (typeof CLEARANCE_LEVELS)[number];
+
+/**
+ * Facts only the candidate can state. Each is entered by hand in Settings and never inferred from a resume.
+ * An absent value means "not stated", which can only ever lead to needs_verification, never to a fail.
+ */
+export interface CandidateFacts {
+  workAuthorization?: WorkAuthorization | null;
+  /** When present, this is the complete list of languages you work in. */
+  languages?: { language: string; level: LanguageLevel }[];
+  clearance?: ClearanceLevel | null;
+  /** Words that rule a posting out of your career direction (for example "sales" or "commission"). */
+  exclusions?: string[];
+}
+
+export type EligibilityStatus = "eligible" | "not_eligible" | "needs_verification" | "not_applicable";
+export type EligibilityGate = "citizenship" | "work_authorization" | "sponsorship" | "clearance" | "language";
+
+export interface EligibilityCheck {
+  gate: EligibilityGate;
+  status: EligibilityStatus;
+  /** The posting's own words. */
+  postingEvidence: string;
+  /** What the candidate stated, or null when they have not said. */
+  candidateEvidence: string | null;
+  note: string;
+}
+
+export interface EligibilityResult {
+  status: EligibilityStatus;
+  checks: EligibilityCheck[];
+  reason: string;
+}
+
+/** What we know about the posting itself. Kept apart from how well it matches. */
+export const POSTING_STATUSES = ["retrieved", "partial", "expired", "unreachable", "unverified"] as const;
+export type PostingStatus = (typeof POSTING_STATUSES)[number];
+
+export const RECOMMENDED_ACTIONS = ["strong_match", "consider", "upskill", "not_recommended", "verify_requirements"] as const;
+export type RecommendedAction = (typeof RECOMMENDED_ACTIONS)[number];
+
+export interface EvidencedPoint {
+  text: string;
+  /** Resume lines (or, for gaps, posting lines) that support the point. */
+  evidence: string[];
+  source: "rules" | "ai";
+}
+
+export type AiReviewStatus = "applied" | "unavailable" | "not_shortlisted" | "failed";
+
+export interface AiReview {
+  status: AiReviewStatus;
+  model?: string;
+  promptVersion?: string;
+  at?: string;
+  confidence?: Confidence;
+  /** Plain-language reason for the adjustment. */
+  rationale?: string;
+  concerns?: string[];
+  dimensions?: { experience: number; responsibilities: number; transferable: number; career: number; domain: number };
+}
 
 export interface MatchComponent {
   key: MatchComponentKey;
@@ -154,8 +257,8 @@ export interface MatchDetail {
   requiredMissing: string[];
   preferredMatched: string[];
   preferredMissing: string[];
-  /** A skill the job asks for that you lack, with the related skill you do have. */
-  transferable: { skill: string; via: string }[];
+  /** A skill the job asks for that you lack, with the related skill you do have and how they relate. */
+  transferable: { skill: string; via: string; why?: string; credit?: number }[];
   /** Lines copied word for word from your resume that support the match. */
   evidence: string[];
   experienceGaps: string[];
@@ -167,6 +270,17 @@ export interface MatchDetail {
   caps: string[];
   explanation: string;
   aiNote?: string;
+  /* v2 additions, all optional so results saved before them still load. */
+  /** 0-100. How much the engine had to go on. Never part of the score. */
+  confidenceScore?: number;
+  skillEvidence?: SkillMatchItem[];
+  strengths?: EvidencedPoint[];
+  gaps?: EvidencedPoint[];
+  careerAlignment?: { score: number | null; note: string; role: string | null };
+  /** The lowest cap that applied, so a later AI adjustment is held to it. Null when no cap applied. */
+  capLimit?: number | null;
+  /** Warnings about the analysis itself: low extraction confidence, thin posting, suspicious posting text. */
+  flags?: string[];
 }
 
 export interface MatchResult {
@@ -178,7 +292,19 @@ export interface MatchResult {
   matchReason: string;
   source: AnalysisSource;
   detail?: MatchDetail;
+  /* v2 additions. When present, `score` equals `finalScore`. */
+  deterministicScore?: number;
+  /** Between -15 and +15. Zero when Claude did not review the job. */
+  aiAdjustment?: number;
+  finalScore?: number;
+  eligibility?: EligibilityResult;
+  postingStatus?: PostingStatus;
+  recommendedAction?: RecommendedAction;
+  ai?: AiReview;
 }
+
+/** The v2 name for a match result. Same object, so every existing screen keeps working. */
+export type JobMatchResult = MatchResult;
 
 export interface Job {
   id: string;
@@ -200,6 +326,11 @@ export interface Job {
   duplicateCount?: number;
   /** Apply links from the merged listings, in case this one has expired. */
   otherApplyUrls?: string[];
+  /** When the job board returned this listing. */
+  retrievedAt?: string;
+  postingStatus?: PostingStatus;
+  /** Why the posting has that status, in plain words. */
+  postingNotes?: string[];
 }
 
 export interface SearchFilters {
@@ -218,8 +349,10 @@ export interface SearchPreferences {
   locations: string[];
   primaryRoles: string[];
   secondaryRoles: string[];
-  /** Match weights. Missing means the defaults. */
-  weights?: MatchWeights;
+  /** Match weights. Missing means the defaults; a missing key means that key's default. */
+  weights?: Partial<MatchWeights>;
+  /** Work authorization, languages, clearance and exclusions, as you state them. */
+  facts?: CandidateFacts;
 }
 
 export const DEFAULT_PREFERENCES: SearchPreferences = {
@@ -276,6 +409,10 @@ export interface SearchResponse {
   provider: ProviderStatus;
   scoring: AnalysisSource | "mixed" | "none";
   warnings: string[];
+  /** Jobs ruled out by a confirmed eligibility mismatch, kept with the reason. Not recommendations. */
+  excluded?: Job[];
+  /** What the AI stage did on this search. */
+  ai?: { status: "applied" | "partial" | "unavailable" | "failed" | "skipped"; shortlisted: number; reviewed: number; calls: number; cached: number; model: string | null };
 }
 
 export interface StoredResults extends SearchResponse {

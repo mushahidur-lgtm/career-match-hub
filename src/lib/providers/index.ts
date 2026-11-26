@@ -1,9 +1,29 @@
 import "server-only";
+import { assessPosting } from "@/lib/jobs/status";
 import type { Job, ProviderStatus, SearchFilters } from "@/types/job";
 import { adzunaConfigured, searchAdzuna } from "./adzuna";
 import { ProviderError, dedupeJobs } from "./common";
 import { demoJobs } from "./demo";
 import { jsearchConfigured, searchJSearch } from "./jsearch";
+
+/** One job source. Add a source by adding an entry to PROVIDERS. Only official APIs belong here. */
+export interface JobSearchProvider {
+  id: "adzuna" | "jsearch";
+  name: string;
+  configured(): boolean;
+  search(query: SearchFilters): Promise<Job[]>;
+}
+
+export const PROVIDERS: JobSearchProvider[] = [
+  { id: "adzuna", name: "Adzuna", configured: adzunaConfigured, search: searchAdzuna },
+  { id: "jsearch", name: "JSearch", configured: jsearchConfigured, search: searchJSearch },
+];
+
+/**
+ * "fallback" (default) uses the first source that answers, which spends one source's quota per search.
+ * "all" asks every configured source at once and merges what they return.
+ */
+export const providerMode = (): "fallback" | "all" => (process.env.JOB_PROVIDER_MODE?.trim().toLowerCase() === "all" ? "all" : "fallback");
 
 /**
  * Sample listings are invented, so they exist only for local development, or when
@@ -15,41 +35,61 @@ export function demoEnabled(): boolean {
 
 /** The provider that will be tried first with the keys currently configured. */
 export function configuredProvider(): ProviderStatus {
-  if (adzunaConfigured()) return "adzuna";
-  if (jsearchConfigured()) return "jsearch";
-  return demoEnabled() ? "demo" : "none";
+  return PROVIDERS.find((p) => p.configured())?.id ?? (demoEnabled() ? "demo" : "none");
 }
 
 export interface ProviderResult {
   jobs: Job[];
+  /** The source of the results. In "all" mode, the first source that answered. */
   provider: ProviderStatus;
   warnings: string[];
 }
 
-/** Tries Adzuna, then JSearch. Falls back to sample listings only when demo is enabled. */
+/** Records when each listing was retrieved and what state it is in. */
+export function annotate(jobs: Job[], now = new Date()): Job[] {
+  return jobs.map((job) => {
+    // A provider that already knows the posting is closed keeps that verdict.
+    const seen = job.postingStatus === "expired" ? { status: "expired" as const, notes: job.postingNotes ?? [] } : assessPosting(job, now);
+    return { ...job, retrievedAt: job.retrievedAt ?? now.toISOString(), postingStatus: seen.status, ...(seen.notes.length ? { postingNotes: seen.notes.slice(0, 5) } : {}) };
+  });
+}
+
+async function attempt(p: JobSearchProvider, filters: SearchFilters, warnings: string[]): Promise<Job[] | null> {
+  try {
+    return await p.search(filters);
+  } catch (err) {
+    console.error(`${p.name} search failed:`, err instanceof Error ? err.message : err);
+    warnings.push(err instanceof ProviderError ? err.message : `${p.name} search failed.`);
+    return null;
+  }
+}
+
+/** Searches the configured sources. Falls back to sample listings only when demo is enabled. */
 export async function fetchJobs(filters: SearchFilters): Promise<ProviderResult> {
   const warnings: string[] = [];
-  const attempts: ["adzuna" | "jsearch", () => Promise<Job[]>][] = [];
-  if (adzunaConfigured()) attempts.push(["adzuna", () => searchAdzuna(filters)]);
-  if (jsearchConfigured()) attempts.push(["jsearch", () => searchJSearch(filters)]);
+  const active = PROVIDERS.filter((p) => p.configured());
 
-  for (const [provider, run] of attempts) {
-    try {
-      return { jobs: dedupeJobs(await run()), provider, warnings };
-    } catch (err) {
-      const name = provider === "adzuna" ? "Adzuna" : "JSearch";
-      console.error(`${name} search failed:`, err instanceof Error ? err.message : err);
-      warnings.push(err instanceof ProviderError ? err.message : `${name} search failed.`);
+  if (providerMode() === "all" && active.length > 1) {
+    const found = await Promise.all(active.map(async (p) => ({ p, jobs: await attempt(p, filters, warnings) })));
+    const answered = found.filter((f) => f.jobs !== null);
+    if (answered.length) {
+      // One source failing still returns what the others found, with the failure named.
+      return { jobs: annotate(dedupeJobs(answered.flatMap((f) => f.jobs!))), provider: answered[0].p.id, warnings };
+    }
+  } else {
+    for (const p of active) {
+      const jobs = await attempt(p, filters, warnings);
+      if (jobs) return { jobs: annotate(dedupeJobs(jobs)), provider: p.id, warnings };
     }
   }
 
   if (demoEnabled()) {
-    if (attempts.length) warnings.push("Showing sample listings because the live search failed.");
-    return { jobs: demoJobs(filters), provider: "demo", warnings };
+    if (active.length) warnings.push("Showing sample listings because the live search failed.");
+    return { jobs: annotate(demoJobs(filters)), provider: "demo", warnings };
   }
-  if (attempts.length) {
+  if (active.length) {
     warnings.push("No jobs were returned because the live search failed. Try again in a minute.");
-    return { jobs: [], provider: attempts[attempts.length - 1][0], warnings };
+    return { jobs: [], provider: active[active.length - 1].id, warnings };
   }
   return { jobs: [], provider: "none", warnings };
 }

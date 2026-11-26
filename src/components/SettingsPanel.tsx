@@ -32,7 +32,7 @@ export function SettingsPanel({ data, recovered, onSavePreferences, onImport, ac
   const [locations, setLocations] = useState(p.locations.join("\n"));
   const [primary, setPrimary] = useState(p.primaryRoles.join("\n"));
   const [secondary, setSecondary] = useState(p.secondaryRoles.join("\n"));
-  const initialWeights = p.weights ?? DEFAULT_MATCH_WEIGHTS;
+  const initialWeights = { ...DEFAULT_MATCH_WEIGHTS, ...p.weights };
   const [weights, setWeights] = useState<Record<MatchComponentKey, string>>(
     () => Object.fromEntries(MATCH_COMPONENTS.map((k) => [k, String(Math.round(initialWeights[k]))])) as Record<MatchComponentKey, string>,
   );

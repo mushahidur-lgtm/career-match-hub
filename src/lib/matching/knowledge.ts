@@ -23,6 +23,12 @@ export const CONCEPTS: Concept[] = [
   { id: "powerplatform", label: "Power Platform and Dynamics", pattern: /\b(?:power platform|power apps|power automate|dynamics 365|dataverse|d365)\b/gi },
   { id: "governance", label: "governance, quality and security", pattern: /\b(?:security|governance|compliance|data quality|privacy|access control|rbac|gdpr|pipeda)\b/gi },
   { id: "delivery", label: "stakeholder and team delivery", pattern: /\b(?:stakeholders?|requirements gathering|agile|scrum|mentor\w*|cross-functional)\b/gi },
+  { id: "hrsystems", label: "HR and payroll systems", pattern: /\b(?:hr|human resources|hris|hcm|payroll|workday|peoplesoft|successfactors)\b/gi },
+  { id: "games", label: "game and graphics programming", pattern: /\b(?:gameplay|game (?:mechanics|engine|development)|rendering|shaders?|physics|animation|frame rate|gpu|unity|unreal)\b/gi },
+  { id: "embedded", label: "embedded and hardware work", pattern: /\b(?:embedded|firmware|microcontrollers?|fpga|device drivers?|rtos)\b/gi },
+  { id: "mobile", label: "mobile app development", pattern: /\b(?:mobile apps?|ios|android|app store)\b/gi },
+  { id: "sales", label: "sales and business development", pattern: /\b(?:sales (?:targets?|quota|pipeline)|cold call\w*|business development|prospecting|upsell\w*|quota)\b/gi },
+  { id: "support", label: "user support and operations", pattern: /\b(?:help ?desk|service desk|desktop support|end[- ]user support|troubleshoot\w*|ticket(?:s|ing)|on-call)\b/gi },
   { id: "database", label: "database development and tuning", pattern: /\b(?:performance tuning|query optimi[sz]ation|stored procedures?|indexing|database design|t-sql|pl\/sql)\b/gi },
 ];
 
@@ -70,6 +76,27 @@ export const SKILL_FAMILIES: SkillFamily[] = [
   { id: "test automation", credit: 0.6, skills: ["Selenium", "Cypress", "Playwright"] },
   { id: "NoSQL store", credit: 0.5, skills: ["MongoDB", "Cassandra", "DynamoDB", "Cosmos DB", "Redis", "Elasticsearch"] },
   { id: "ML framework", credit: 0.6, skills: ["TensorFlow", "PyTorch", "scikit-learn", "Keras"] },
+];
+
+export interface SkillRelation {
+  /** The skill the candidate has. */
+  have: string;
+  /** The skill the posting asks for. */
+  asked: string;
+  /** Share of full credit, before the candidate's evidence level for `have` is applied. Always below 1. */
+  credit: number;
+  /** What carries over and what does not. Shown to the user. */
+  why: string;
+}
+
+/** Specific, explained relationships. They are read in both directions and take priority over the families. */
+export const SKILL_RELATIONS: SkillRelation[] = [
+  { have: "Azure Synapse", asked: "Azure Data Factory", credit: 0.6, why: "Synapse pipelines use the Data Factory pipeline model, but triggers, integration runtimes and operations differ." },
+  { have: "SSIS", asked: "Azure Data Factory", credit: 0.4, why: "Both orchestrate data movement; Data Factory is a cloud service with a different authoring and runtime model." },
+  { have: "SQL Server", asked: "Azure SQL", credit: 0.75, why: "Azure SQL runs the SQL Server engine and T-SQL carries over; cloud administration, limits and security differ." },
+  { have: "Power BI", asked: "Microsoft Fabric", credit: 0.4, why: "Power BI is one workload inside Fabric; lakehouse, warehouse and pipeline work are separate skills." },
+  { have: "C#", asked: ".NET", credit: 0.6, why: "C# runs on .NET, but ASP.NET Core hosting, middleware and framework libraries are separate knowledge." },
+  { have: ".NET", asked: "REST APIs", credit: 0.5, why: "ASP.NET Core is a common way to build C# Web APIs, but .NET experience alone does not show API design." },
 ];
 
 /** Place names that count as the same area for commuting. Matched as whole words. */

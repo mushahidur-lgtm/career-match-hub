@@ -12,7 +12,7 @@ export interface ParsedRequirements {
   duties: string;
 }
 
-type Section = "required" | "preferred" | "duties" | "other";
+export type Section = "required" | "preferred" | "duties" | "other";
 
 const HEADINGS: [Section, RegExp][] = [
   ["preferred", /^(?:nice[- ]to[- ]haves?|preferred(?: qualifications| skills)?|bonus(?: points)?|assets?|an asset|good to have|desirable|what (?:would|will) (?:set you apart|make you stand out)|extras?)\b/i],
@@ -51,28 +51,43 @@ export function requiredYearsIn(lines: string[]): number | null {
   return best;
 }
 
+export interface SectionedLine {
+  line: string;
+  section: Section;
+  /** True when the line is in a preferred section, or carries preference wording outside a required one. */
+  preferred: boolean;
+  cuePreferred: boolean;
+}
+
+/** Every line of the posting with the section it sits in. Headings themselves are left out. */
+export function sectionedLines(description: string): SectionedLine[] {
+  const out: SectionedLine[] = [];
+  let section: Section = "other";
+  for (const line of splitLines(description)) {
+    const heading = headingOf(line);
+    if (heading) {
+      section = heading;
+      continue;
+    }
+    const cuePreferred = PREFERRED_CUE.test(line);
+    out.push({ line, section, preferred: section === "preferred" || (cuePreferred && section !== "required"), cuePreferred });
+  }
+  return out;
+}
+
 export function parseRequirements(title: string, description: string): ParsedRequirements {
   const required: string[] = [];
   const preferred: string[] = [];
   const dutyLines: string[] = [];
   const requirementLines: string[] = [];
-  let section: Section = "other";
-  let structured = false;
+  let structured = splitLines(description).some((l) => headingOf(l) !== null);
 
-  for (const line of splitLines(description)) {
-    const heading = headingOf(line);
-    if (heading) {
-      section = heading;
-      structured = true;
-      continue;
-    }
-    const cuePreferred = PREFERRED_CUE.test(line);
+  for (const { line, section, preferred: isPreferred, cuePreferred } of sectionedLines(description)) {
     if (cuePreferred) structured = true;
-    const bucket: "required" | "preferred" = section === "preferred" || (cuePreferred && section !== "required") ? "preferred" : "required";
     const found = flattenSkills(extractSkills(line));
-    (bucket === "preferred" ? preferred : required).push(...found);
+    (isPreferred ? preferred : required).push(...found);
     if (section === "duties" || section === "other") dutyLines.push(line);
-    if (bucket === "required") requirementLines.push(line);
+    if (!isPreferred) requirementLines.push(line);
   }
 
   // Anything in the title is core to the role.

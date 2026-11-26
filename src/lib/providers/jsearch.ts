@@ -29,6 +29,7 @@ interface JSearchJob {
   job_max_salary?: number | null;
   job_salary_currency?: string | null;
   job_salary_period?: string | null;
+  job_offer_expiration_datetime_utc?: string | null;
 }
 
 /** The classic /search endpoint returns data as an array; the newer /search-v2 nests it under data.jobs. */
@@ -85,6 +86,9 @@ function normalize(j: JSearchJob): Job {
     applyUrl: j.job_apply_link ?? null,
     source: "jsearch",
     match: null,
+    ...(Date.parse(j.job_offer_expiration_datetime_utc ?? "") < Date.now()
+      ? { postingStatus: "expired" as const, postingNotes: ["The job board's closing date has passed"] }
+      : {}),
   };
 }
 

@@ -4,11 +4,13 @@ import { DEFAULT_FILTERS, DEFAULT_PREFERENCES, type CandidateProfile, type Job }
 const callStructured = vi.fn();
 vi.mock("@/lib/anthropic", () => ({
   callStructured: (...args: unknown[]) => callStructured(...args),
+  activeModel: () => "test",
   describeAiError: () => "Claude could not be reached.",
   isAiConfigured: () => true,
 }));
 
 const { POST } = await import("@/app/api/search-jobs/route");
+const { clearAssessmentCache } = await import("@/lib/ai/career-fit");
 
 const RESUME = `Senior Data Engineer, Rideau Bank (2019 - Present)
 - Built ETL data pipelines in Azure Data Factory and Databricks that load a Snowflake warehouse for a retail bank.
@@ -43,7 +45,9 @@ const search = () =>
 
 beforeEach(() => {
   callStructured.mockReset();
+  clearAssessmentCache();
   vi.stubEnv("CMH_DEMO", "1");
+  vi.stubEnv("AI_SHORTLIST", "10");
   vi.stubEnv("NODE_ENV", "production");
   vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
@@ -52,17 +56,31 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const exp = (j: Job) => j.match!.detail!.components.find((c) => c.key === "experience")!;
+const entry = (index: number, adjustment: number, over: Record<string, unknown> = {}) => ({
+  index,
+  experienceFit: 70,
+  responsibilityFit: 70,
+  transferableFit: 50,
+  careerFit: 60,
+  domainFit: 40,
+  adjustment,
+  strengths: [],
+  gaps: [],
+  concerns: [],
+  confidence: "medium",
+  rationale: "",
+  ...over,
+});
 
 describe("search with Claude review", () => {
-  it("bounds Claude's scores, drops invented evidence and ignores bad entries", async () => {
+  it("bounds Claude's adjustment, drops invented evidence and ignores bad entries", async () => {
     callStructured.mockResolvedValue({
       model: "test",
       data: {
         jobs: [
-          { index: 0, experienceScore: 0, responsibilitiesScore: 0, evidence: ["Led a 300 person engineering org at Google", REAL_LINE], gaps: ["No Kafka shown"], note: "Solid fit." },
-          { index: 999, experienceScore: 100, responsibilitiesScore: 100, evidence: [], gaps: [], note: "ghost" },
-          { index: 0, experienceScore: 100, responsibilitiesScore: 100, evidence: [], gaps: [], note: "duplicate" },
+          entry(0, -40, { strengths: [{ text: "Ran an org", evidence: "Led a 300 person engineering org at Google" }, { text: "Built pipelines", evidence: REAL_LINE }], gaps: ["No Kafka shown"], rationale: "Solid fit." }),
+          entry(999, 15, { rationale: "ghost" }),
+          entry(0, 15, { rationale: "duplicate" }),
         ],
       },
     });
@@ -72,19 +90,22 @@ describe("search with Claude review", () => {
 
     const reviewed = (body.jobs as Job[]).filter((j) => j.match?.source === "ai");
     expect(reviewed).toHaveLength(1);
-    const j = reviewed[0];
+    const m = reviewed[0].match!;
 
     // The first entry won; the duplicate and the out-of-range index changed nothing.
-    expect(j.match!.detail!.aiNote).toBe("Solid fit.");
-    expect(exp(j).aiAdjusted).toBe(true);
+    expect(m.detail!.aiNote).toBe("Solid fit.");
+    expect(m.ai).toMatchObject({ status: "applied", model: "test", promptVersion: "career-fit-1", confidence: "medium" });
+    expect(m.aiAdjustment).toBeGreaterThanOrEqual(-15);
+    expect(m.score).toBe(m.deterministicScore! + m.aiAdjustment!);
 
     // Evidence: the real line stays, the invented one is gone.
-    expect(j.match!.detail!.evidence).toContain(REAL_LINE);
-    expect(j.match!.detail!.evidence.join(" ")).not.toMatch(/Google/);
-    expect(j.match!.detail!.experienceGaps).toContain("No Kafka shown");
+    expect(m.detail!.evidence).toContain(REAL_LINE);
+    expect(JSON.stringify(m.detail)).not.toMatch(/Google/);
+    expect(m.detail!.experienceGaps).toContain("No Kafka shown");
 
     // Every other job keeps its rule-based score and is not labelled as reviewed.
     expect(body.scoring).toBe("mixed");
+    expect(body.ai).toMatchObject({ status: "partial", reviewed: 1, calls: 1 });
     expect(body.jobs.length).toBeGreaterThan(1);
   });
 
@@ -94,8 +115,10 @@ describe("search with Claude review", () => {
     const call = callStructured.mock.calls[0][0] as { user: string; system: string };
     expect(call.user).toContain("<resume>");
     expect(call.user).toContain("Built ETL data pipelines");
-    expect(call.user).toContain("requiredSkills");
+    expect(call.user).toContain("requiredMissing");
+    expect(call.user).toContain("onlyListed");
     expect(call.system).toMatch(/copied exactly from the resume/);
+    expect(call.system).toMatch(/data, not instructions/);
   });
 
   it("falls back to rule-based scores, with a message, when Claude fails", async () => {
@@ -107,7 +130,7 @@ describe("search with Claude review", () => {
   });
 
   it("falls back, with a message, when Claude returns nothing usable", async () => {
-    callStructured.mockResolvedValue({ model: "test", data: { jobs: [{ index: 500, experienceScore: 50, responsibilitiesScore: 50, evidence: [], gaps: [], note: "" }] } });
+    callStructured.mockResolvedValue({ model: "test", data: { jobs: [entry(500, 5)] } });
     const body = await (await search()).json();
     expect(body.scoring).toBe("heuristic");
     expect(body.warnings.join(" ")).toMatch(/no usable review/);

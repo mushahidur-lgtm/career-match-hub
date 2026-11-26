@@ -32,6 +32,9 @@ export const cityOf = (location: string) => location.split(",")[0].trim();
 
 export function stripHtml(html: string): string {
   return html
+    // Comments and script or style blocks are never visible to a reader, so their text is not part of the posting.
+    .replace(/<!--[\s\S]*?(?:-->|$)/g, "")
+    .replace(/<(script|style|noscript|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "")
     .replace(/<\s*(?:br|\/p|\/li|\/div|\/h\d)\s*\/?>/gi, "\n")
     .replace(/<li[^>]*>/gi, "• ")
     .replace(/<[^>]+>/g, "")
