@@ -66,3 +66,77 @@ assessment, the phased plan and (at the end) the record of what changed.
 | Sonnet 4.5 retirement (2026-11-30) | Existing `withModelFallback` logic reused |
 | Prompt injection through postings | Postings sanitized (invisible characters, instruction-like lines flagged), wrapped as data, no tools, output schema-validated and bounded |
 | Eligibility false negatives | Hard fail only with confirmed posting text AND an explicit candidate fact; otherwise `needs_verification` |
+
+## 5. What changed
+
+**Matching.** `scoreJob` is still the only scorer. New: evidence levels per skill (100/70/40/25/0), SQL
+implied by SQL Server, T-SQL and other SQL products, explained transferable relations, responsibilities
+judged from work and projects, a career-alignment part, weights 25/25/20/10/10/5/5, new caps, 0-100
+confidence, eligibility gates, posting status, recommended action, strengths and gaps with evidence.
+Supporting modules: `candidate/`, `eligibility/`, `jobs/`, `matching/{extraction,transfer,career,confidence,recommend}`,
+`ai/career-fit`, `search/`, `feedback`.
+
+**Search.** `JobSearchProvider` list, optional `JOB_PROVIDER_MODE=all`, retrieval time and posting status on
+each job, JSearch expiry date honoured, hidden HTML removed, rules screen everything, Claude reviews the
+top 20 candidates, ranking eligible then needs-verification, excluded jobs returned separately.
+
+**API (`POST /api/search-jobs`).** Request: optional `preferences.facts` and `weights.career`. Response:
+optional `excluded` and `ai`; v2 fields on `match` and jobs. Compatibility notes:
+* `jobs` no longer contains not-eligible or expired postings; read `excluded` for those.
+* `match.score` is unchanged in meaning for consumers and equals `finalScore`.
+* The per-component `aiAdjusted` flag is no longer set (old stored results that have it still load).
+* New warning when Claude is not connected.
+
+**Storage / DB.** No Supabase migration. Additive JSON only: facts in preferences, v2 match fields, a
+`feedback` list (cap 1000) in the backup blob and sync. Backup version unchanged. An older build reading a
+newer backup would drop the new fields.
+
+**Deeper evaluation on open** is the existing on-demand `/api/job-insights`, which receives the v2 match.
+No new route.
+
+## 6. Existing tests changed on purpose
+
+| Test | Why |
+|---|---|
+| default weights; weight normalisation | new weights and `career` |
+| thin-posting and off-role cap | the weighted score is now below the cap, so `capLimit` is asserted instead of the cap message |
+| C#/.NET responsibilities | a skills line is no longer demonstrated work |
+| transferable shape | entries now carry `why` and `credit` |
+| "Claude's contribution is bounded", `search-ai` | +/-25 per component replaced by +/-15 on the final score |
+
+`canonicalSkill("ASP.NET Core")` returning itself was a pre-existing bug and is fixed.
+
+## 7. Before and after on the labelled fixtures
+
+Rules only, no AI, no stated facts. Reproduce with
+`CMH_PRINT_COMPARISON=1 npx vitest run tests/engine-comparison.test.ts --disableConsoleIntercept`.
+
+| Scenario | v1 | v2 | What v2 adds |
+|---|---:|---:|---|
+| A strong match, Python only listed | 94 | 95 | Python flagged as listed-only; false "SQL" gap gone |
+| B transferable | 88 | 84 | each relation explained, not counted as matched |
+| C keywords, wrong work | 60 | 55 | held down |
+| D junior role | 86 | 65 | capped: well below your level |
+| E citizenship required | 89 | 95 | with a work permit stated: `not_eligible`, excluded. Score is fit only |
+| F Secret clearance | 94 | 100 | `needs_verification`, ranked after eligible jobs |
+| G thin posting | 45 (low) | 33 (low) | confidence capped, flagged, no requirements invented |
+
+## 8. AI call volume and cost (estimate, not measured)
+
+Per search: at most 2 calls of 10 jobs (before: 1 call of 15). Cached repeats make 0 calls; the morning run
+makes 0. Rough size per uncached search: about 25k input and 7-10k output tokens. At Claude Sonnet 5.5 list
+prices ($2 / $10 per million tokens, cached from 2026-11-03) that is about $0.12-0.15, roughly double the
+old review. No live call was made while building this, so check real usage. `AI_SHORTLIST` lowers it.
+
+## 9. Not verified and outstanding
+
+* No live Claude, Adzuna, JSearch or Supabase call was made. They are covered with mocks only.
+* Evidence credits, cap limits and the +/-15 bound are starting assumptions, not calibrated on outcomes.
+* Rules scores can still be generous: skills are 25% of the total, so a job with weak skill coverage but a
+  matching title and duties can read as a strong match.
+* Requirement and eligibility reading is English pattern matching; unusual wording will be missed, which
+  shows as "no eligibility condition found", not as a pass.
+* The injection guard catches known phrasings only; the bound, schema and lack of tools are the real limits.
+* Eligibility facts cover Canada only.
+* The AI cache is per server instance, in memory, for one hour; it holds assessments, which quote resume lines.
+* Feedback is captured but nothing reads it yet.
