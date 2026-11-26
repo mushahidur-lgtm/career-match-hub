@@ -136,8 +136,11 @@ export function refineJobs(jobs: Job[], f: RefineFilters, ctx: RefineContext): J
     if (f.requiredSkills !== "All") {
       const detail = job.match?.detail;
       // A job whose required skills could not be read is neither complete nor missing some.
-      if (!detail || !(detail.requiredMatched.length + detail.requiredMissing.length)) return false;
-      if ((detail.requiredMissing.length === 0) !== (f.requiredSkills === "none_missing")) return false;
+      const required = detail?.skillEvidence?.filter((s) => s.importance === "required") ?? [];
+      if (!detail || !required.length) return false;
+      // A skill only covered by a related one still counts as missing.
+      const missing = required.some((s) => !detail.requiredMatched.includes(s.skill));
+      if (missing === (f.requiredSkills === "none_missing")) return false;
     }
     if (f.transitionOnly && job.match?.detail?.careerAlignment?.relation !== "transition") return false;
 

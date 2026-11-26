@@ -63,6 +63,18 @@ describe("result filters", () => {
   });
 });
 
+describe("a required skill covered only by a related one", () => {
+  const related = { ...SCENARIOS[0].job, description: `${SCENARIOS[0].job.description}\nRequirements:\n- Azure SQL` };
+  it("is still counted as missing, and rules out a strong recommendation", () => {
+    const r = ruleSection(related, input);
+    expect(r.score).toBeGreaterThanOrEqual(75);
+    expect(r.requiredMissing).toContain("Azure SQL");
+    expect(r.recommendation).not.toBe("strongly_recommend");
+    const listed = { ...makeJob({ id: "r" }), match: scoreJob(related, input) };
+    expect(refineJobs([listed], { ...DEFAULT_REFINE, requiredSkills: "none_missing" }, { statusOf: () => null })).toEqual([]);
+  });
+});
+
 describe("assessment cache", () => {
   it("keeps only finished assessments and survives damaged storage", () => {
     const store = memoryStorage();

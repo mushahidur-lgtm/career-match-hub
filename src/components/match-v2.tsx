@@ -33,7 +33,7 @@ export const POSTING_LABEL: Record<PostingStatus, [string, Tone]> = {
 /** Posting completeness and checks, shown on a result card. Kept apart from the match score. */
 export function PostingBadges({ job }: { job: Job }) {
   const d = job.match?.detail;
-  const total = d ? d.requiredMatched.length + d.requiredMissing.length + d.transferable.filter((t) => !d.preferredMissing.includes(t.skill) && !d.requiredMatched.includes(t.skill)).length : 0;
+  const total = d?.skillEvidence?.filter((s) => s.importance === "required").length ?? 0;
   const preferredMissing = job.match?.eligibility?.checks.some((c) => c.status === "preferred_missing");
   return (
     <>

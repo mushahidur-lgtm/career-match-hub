@@ -74,6 +74,7 @@ export interface RuleSection {
   eligibility: EligibilityStatus;
   postingClosed: boolean;
   requiredMatched: string[];
+  /** Every required skill not on the resume, including those a related skill partly covers. */
   requiredMissing: string[];
   preferredMatched: string[];
   transferable: { skill: string; via: string; why: string }[];
@@ -96,11 +97,18 @@ export interface Assessment {
 
 const QUALIFICATION_GATES = ["education", "certification"];
 
+export const requiredNotHeld = (match: MatchResult): string[] => {
+  const d = match.detail!;
+  const matched = new Set(d.requiredMatched);
+  return (d.skillEvidence ?? []).filter((s) => s.importance === "required" && !matched.has(s.skill)).map((s) => s.skill);
+};
+
 export function rulesRecommendation(match: MatchResult): Recommendation {
   const d = match.detail!;
   if (match.eligibility?.status === "not_eligible") return "not_eligible";
   if (match.postingStatus === "expired") return "low_priority";
-  if (match.score >= 75 && d.confidence !== "low" && match.eligibility?.status !== "needs_verification") return "strongly_recommend";
+  // A strong recommendation also needs every required skill to be one you actually have.
+  if (match.score >= 75 && d.confidence !== "low" && match.eligibility?.status !== "needs_verification" && !requiredNotHeld(match).length) return "strongly_recommend";
   if (d.careerAlignment?.relation === "transition" && match.score >= 40) return "career_transition";
   return match.score >= 55 ? "apply_after_gaps" : "low_priority";
 }
@@ -115,7 +123,7 @@ export function ruleSection(job: MatchableJob, input: MatchInput): RuleSection {
     eligibility: match.eligibility!.status,
     postingClosed: match.postingStatus === "expired",
     requiredMatched: d.requiredMatched,
-    requiredMissing: d.requiredMissing,
+    requiredMissing: requiredNotHeld(match),
     preferredMatched: d.preferredMatched,
     transferable: d.transferable.map((t) => ({ skill: t.skill, via: t.via, why: t.why ?? "" })),
     weaklyShown: (d.skillEvidence ?? []).filter((s) => !s.via && (s.level === "project" || s.level === "learning" || s.level === "listed")).map((s) => ({ skill: s.skill, level: s.level })),
