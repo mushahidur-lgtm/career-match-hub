@@ -13,6 +13,9 @@ import {
   SENIORITY_LEVELS,
   WORK_MODES,
   CLEARANCE_LEVELS,
+  DESCRIPTION_SOURCES,
+  DESCRIPTION_STATUSES,
+  VERIFICATION_STATES,
   EVIDENCE_LEVELS,
   LANGUAGE_LEVELS,
   POSTING_STATUSES,
@@ -212,6 +215,23 @@ export const MatchSchema = z.object({
   ai: AiReviewSchema.optional(),
 });
 
+export const EnrichmentSchema = z.object({
+  status: z.enum(DESCRIPTION_STATUSES),
+  originalLength: z.number().int().min(0),
+  enrichedLength: z.number().int().min(0),
+  source: z.enum(DESCRIPTION_SOURCES),
+  retrievedAt: iso,
+  truncated: z.boolean(),
+  error: str(200).optional(),
+});
+
+export const VerificationSchema = z.object({
+  state: z.enum(VERIFICATION_STATES),
+  checkedAt: iso,
+  notes: z.array(str(300)).max(10),
+  finalUrl: str(2000).optional(),
+});
+
 export const JobSchema = z.object({
   id: str(300),
   title: str(500),
@@ -240,6 +260,8 @@ export const JobSchema = z.object({
   retrievedAt: iso.optional(),
   postingStatus: z.enum(POSTING_STATUSES).optional(),
   postingNotes: z.array(str(200)).max(10).optional(),
+  enrichment: EnrichmentSchema.optional(),
+  verification: VerificationSchema.optional(),
 });
 
 /** Accepts the statuses used before the pipeline grew (Saved, Interviewing) and reads them as the current ones. */

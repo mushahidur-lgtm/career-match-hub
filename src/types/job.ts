@@ -212,6 +212,37 @@ export interface EligibilityResult {
 export const POSTING_STATUSES = ["retrieved", "partial", "expired", "unreachable", "unverified"] as const;
 export type PostingStatus = (typeof POSTING_STATUSES)[number];
 
+/* ---------- how much of a posting we hold, and whether it is still open ---------- */
+
+export const DESCRIPTION_STATUSES = ["full", "partially_enriched", "provider_only", "incomplete", "failed", "not_attempted"] as const;
+export type DescriptionStatus = (typeof DESCRIPTION_STATUSES)[number];
+
+export const DESCRIPTION_SOURCES = ["provider", "provider_detail", "json_ld", "employer_page"] as const;
+export type DescriptionSource = (typeof DESCRIPTION_SOURCES)[number];
+
+export interface Enrichment {
+  status: DescriptionStatus;
+  originalLength: number;
+  enrichedLength: number;
+  /** Where the description now held came from, word for word. */
+  source: DescriptionSource;
+  retrievedAt: string;
+  truncated: boolean;
+  /** A short, safe reason. Never a stack trace or a provider's raw message. */
+  error?: string;
+}
+
+export const VERIFICATION_STATES = ["verified_active", "unverified", "partially_verified", "expired", "closed", "link_unavailable", "verification_failed"] as const;
+export type VerificationState = (typeof VERIFICATION_STATES)[number];
+
+export interface Verification {
+  state: VerificationState;
+  checkedAt: string;
+  notes: string[];
+  /** Where the apply link ended up, when it redirected. */
+  finalUrl?: string;
+}
+
 export const RECOMMENDED_ACTIONS = ["strong_match", "consider", "upskill", "not_recommended", "verify_requirements"] as const;
 export type RecommendedAction = (typeof RECOMMENDED_ACTIONS)[number];
 
@@ -331,6 +362,9 @@ export interface Job {
   postingStatus?: PostingStatus;
   /** Why the posting has that status, in plain words. */
   postingNotes?: string[];
+  /** Set when the posting was opened and checked. */
+  enrichment?: Enrichment;
+  verification?: Verification;
 }
 
 export interface SearchFilters {

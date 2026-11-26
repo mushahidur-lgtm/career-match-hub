@@ -96,7 +96,7 @@ export interface ClosedInfo {
   reasons: string[];
 }
 
-const CLOSED_TEXT = /\b(?:no longer (?:accepting|available|open)|(?:position|job|posting|role|vacancy) (?:has been|is|was) (?:filled|closed|cancel+ed)|(?:this )?(?:job|posting|position|competition) (?:has )?(?:expired|closed)|applications? (?:are |is |have |has )?(?:now )?closed|(?:is|are) no longer (?:hiring|recruiting))\b/i;
+export const CLOSED_TEXT = /\b(?:no longer (?:accepting|available|open)|(?:position|job|posting|role|vacancy) (?:has been|is|was) (?:filled|closed|cancel+ed)|(?:this )?(?:job|posting|position|competition) (?:has )?(?:expired|closed)|applications? (?:are |is |have |has )?(?:now )?closed|(?:is|are) no longer (?:hiring|recruiting))\b/i;
 
 /**
  * A posting is "likely closed" when it is old (no job board says when one closes, so age is only a hint), or when its own
