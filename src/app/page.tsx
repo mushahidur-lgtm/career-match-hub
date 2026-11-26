@@ -8,6 +8,9 @@ import { AccountPanel } from "@/components/AccountPanel";
 import { Watchlist, type WatchlistActions } from "@/components/Watchlist";
 import { WatchlistCard } from "@/components/WatchlistCard";
 import { ContactsContext, type ContactsApi } from "@/components/contacts/context";
+import { FeedbackContext, type RecordFeedback } from "@/components/feedback-context";
+import { feedbackForStatus, mergeFeedback, readFeedback, recordFeedback, type FeedbackEvent } from "@/lib/feedback";
+import { exclusionReason } from "@/lib/search/rank";
 import { ContactDialog } from "@/components/contacts/ContactDialog";
 import { NetworkingCard } from "@/components/contacts/NetworkingCard";
 import { RecruiterDialog } from "@/components/contacts/RecruiterDialog";
@@ -127,6 +130,9 @@ export default function Home() {
     }
     return r.store;
   });
+  // What happened to jobs you were shown. Recorded only; it never changes a score.
+  const [feedback, setFeedback] = usePersistentState<FeedbackEvent[]>("cmh:feedback", [], readFeedback);
+  const record = useCallback<RecordFeedback>((type, job, detail) => setFeedback((list) => recordFeedback(list, type, job, detail)), [setFeedback]);
   // Career sites you check by hand, read entry by entry like applications.
   const [watchSkipped, setWatchSkipped] = useState(0);
   const [watchlist, setWatchlist, , , watchLost] = usePersistentState<WatchlistStore>("cmh:watchlist", EMPTY_WATCHLIST, (value) => {
@@ -240,12 +246,25 @@ export default function Home() {
   /* ----- saved jobs ----- */
   // `id` below is the tracked entry's own id. The cards and dialogs pass `saved.job.id`.
   const resumeRef = active ? { id: active.id, name: active.name } : null;
-  const saveJob = (job: Job, st: ApplicationStatus, appliedAt?: string | null) => setSaved((list) => addSavedJob(list, job, st, new Date(), resumeRef, appliedAt));
-  const setJobStatus = (id: string, st: ApplicationStatus) => setSaved((list) => setSavedStatus(list, id, st, new Date(), { resume: resumeRef }));
+  const noteStatus = (job: Job | undefined, st: ApplicationStatus) => {
+    const type = feedbackForStatus(st);
+    if (job && type) record(type, job);
+  };
+  const saveJob = (job: Job, st: ApplicationStatus, appliedAt?: string | null) => {
+    noteStatus(job, st);
+    setSaved((list) => addSavedJob(list, job, st, new Date(), resumeRef, appliedAt));
+  };
+  const setJobStatus = (id: string, st: ApplicationStatus) => {
+    noteStatus(saved.find((s) => s.job.id === id)?.job, st);
+    setSaved((list) => setSavedStatus(list, id, st, new Date(), { resume: resumeRef }));
+  };
   const setJobNotes = (id: string, notes: string) => setSaved((list) => setSavedNotes(list, id, notes));
   const removeJob = (id: string) => setSaved((list) => removeSavedJob(list, id));
   const updateApp = (id: string, change: (a: Application) => Application) => setSaved((list) => updateSavedJob(list, id, change));
-  const moveApp = (id: string, st: ApplicationStatus, opts?: { rejectionReason?: string }) => setSaved((list) => setSavedStatus(list, id, st, new Date(), { resume: resumeRef, ...opts }));
+  const moveApp = (id: string, st: ApplicationStatus, opts?: { rejectionReason?: string }) => {
+    noteStatus(saved.find((s) => s.job.id === id)?.job, st);
+    setSaved((list) => setSavedStatus(list, id, st, new Date(), { resume: resumeRef, ...opts }));
+  };
   const openApplication = (id: string, tab: ApplicationTab = "details") => setOpenApp({ id, tab });
   const reminders = useMemo(() => computeReminders(saved), [saved]);
   const exportApplications = () => {
@@ -278,12 +297,12 @@ export default function Home() {
   const rereadProfile = (id: string, p: CandidateProfile) => setResumes((list) => list.map((r) => (r.id === id ? { ...r, profile: p } : r)));
 
   /* ----- backup ----- */
-  const appData: AppData = { resumes, activeResumeId: active?.id ?? null, filters, preferences, saved, intel, contacts, watchlist };
+  const appData: AppData = { resumes, activeResumeId: active?.id ?? null, filters, preferences, saved, intel, contacts, watchlist, feedback };
 
   // What cloud sync watches. Search filters are left out on purpose: they change constantly and are per device.
   const syncData = useMemo<AppData>(
-    () => ({ resumes, activeResumeId: active?.id ?? null, filters: DEFAULT_FILTERS, preferences, saved, intel, contacts, watchlist }),
-    [resumes, active, preferences, saved, intel, contacts, watchlist],
+    () => ({ resumes, activeResumeId: active?.id ?? null, filters: DEFAULT_FILTERS, preferences, saved, intel, contacts, watchlist, feedback }),
+    [resumes, active, preferences, saved, intel, contacts, watchlist, feedback],
   );
   // Data arriving from the cloud. It never touches your search filters or your current results.
   const [cloudEpoch, setCloudEpoch] = useState(0);
@@ -300,6 +319,7 @@ export default function Home() {
     // An older cloud copy has no contacts. Never let that wipe the ones on this device.
     if (d.contacts) setContacts(d.contacts);
     if (d.watchlist) setWatchlist(d.watchlist);
+    if (d.feedback) setFeedback(d.feedback);
   };
   const cloud = useCloud({ data: syncData, apply: applyCloud, updateIntel: setIntel, intel });
 
@@ -379,9 +399,11 @@ export default function Home() {
       if (d.intel) setIntel((store) => mergeIntel(store, d.intel!));
       if (d.contacts) setContacts((store) => mergeContactStores(store, d.contacts!));
       if (d.watchlist) setWatchlist((store) => mergeWatchlists(store, d.watchlist!));
+      if (d.feedback) setFeedback((list) => mergeFeedback(list, d.feedback!));
       if (!active && d.resumes[0]) setActiveId(d.activeResumeId ?? d.resumes[0].id);
       return;
     }
+    if (d.feedback) setFeedback(d.feedback);
     setResumes(d.resumes);
     setActiveId(d.activeResumeId ?? d.resumes[0]?.id ?? null);
     setFilters(d.filters);
@@ -408,6 +430,7 @@ export default function Home() {
   const detailContext = { resume: active, resumes, aiAvailable: status?.ai ?? false, onNotes: setJobNotes };
 
   return (
+    <FeedbackContext.Provider value={record}>
     <ContactsContext.Provider value={contactsApi}>
     <DetailContext.Provider value={detailContext}>
     <AppShell tab={tab} onTab={setTab} counts={{ applications: saved.length, interviews: saved.reduce((n, a) => n + (a.interviews ?? []).filter((i) => i.status === "Scheduled").length, 0) }} status={<StatusBanner status={status} results={results} />}>
@@ -577,6 +600,21 @@ export default function Home() {
                     </div>
                   </>
                 )}
+                {results.excluded && results.excluded.length > 0 && (
+                  <details className="rounded-xl border border-line p-4">
+                    <summary className="cursor-pointer text-sm font-semibold">
+                      {results.excluded.length} excluded: not eligible or closed
+                    </summary>
+                    <ul className="mt-4 space-y-4">
+                      {results.excluded.map((job) => (
+                        <li key={job.id} className="space-y-2">
+                          <p className="text-sm text-warn">{exclusionReason(job)}</p>
+                          <JobCard job={job} saved={findSaved(saved, job)} onSave={saveJob} onStatus={setJobStatus} onRemove={removeJob} />
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
               </section>
             )}
           </div>
@@ -668,5 +706,6 @@ export default function Home() {
     </AppShell>
     </DetailContext.Provider>
     </ContactsContext.Provider>
+    </FeedbackContext.Provider>
   );
 }

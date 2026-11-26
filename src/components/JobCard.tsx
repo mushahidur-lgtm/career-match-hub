@@ -5,7 +5,9 @@ import { Building2, ExternalLink, MapPin, UsersRound, Wallet } from "lucide-reac
 import { formatSalary } from "@/lib/format";
 import type { Job, SavedJob } from "@/types/job";
 import { useContacts } from "./contacts/context";
+import { useFeedback } from "./feedback-context";
 import { JobDetailDialog, type DetailTab } from "./JobDetailDialog";
+import { MatchBadges } from "./match-v2";
 import { ConfidenceBadge, FreshnessBadge, JobQualityLine, SaveControl, modeTone, safeUrl, typeLabel, typeTone, type JobActions } from "./job-parts";
 import { Badge, ScoreBadge, secondaryButton } from "./ui";
 
@@ -17,6 +19,11 @@ interface Props extends JobActions {
 export function JobCard({ job, saved, onSave, onStatus, onRemove }: Props) {
   const [open, setOpen] = useState<DetailTab | null>(null);
   const contacts = useContacts();
+  const record = useFeedback();
+  const show = (tab: DetailTab) => {
+    record("viewed", job);
+    setOpen(tab);
+  };
   const titleId = `job-${job.id}-card`;
   const apply = safeUrl(job.applyUrl);
 
@@ -50,6 +57,7 @@ export function JobCard({ job, saved, onSave, onStatus, onRemove }: Props) {
         </span>
         <FreshnessBadge postedAt={job.postedAt} />
         {job.match?.detail && <ConfidenceBadge confidence={job.match.detail.confidence} />}
+        {job.match && <MatchBadges match={job.match} />}
         {saved && <Badge tone="brand">{saved.status}</Badge>}
       </div>
 
@@ -58,10 +66,10 @@ export function JobCard({ job, saved, onSave, onStatus, onRemove }: Props) {
       <JobQualityLine job={job} />
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <button type="button" className={secondaryButton} onClick={() => setOpen("overview")} aria-haspopup="dialog">
+        <button type="button" className={secondaryButton} onClick={() => show("overview")} aria-haspopup="dialog">
           Details
         </button>
-        <button type="button" className={secondaryButton} onClick={() => setOpen("match")} aria-haspopup="dialog">
+        <button type="button" className={secondaryButton} onClick={() => show("match")} aria-haspopup="dialog">
           Match analysis
         </button>
         <button type="button" className={secondaryButton} onClick={() => contacts.openFinder(job)} aria-haspopup="dialog">

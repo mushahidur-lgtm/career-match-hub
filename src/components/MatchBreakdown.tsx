@@ -1,5 +1,6 @@
 import { Quote } from "lucide-react";
-import type { Confidence, MatchResult } from "@/types/job";
+import type { Confidence, Job, MatchResult } from "@/types/job";
+import { Corrections, Points, ScoreSummary } from "./match-v2";
 import { Badge } from "./ui";
 
 const confidenceTone: Record<Confidence, "good" | "info" | "warn"> = { high: "good", medium: "info", low: "warn" };
@@ -29,7 +30,7 @@ function Group({ title, items, tone, empty }: { title: string; items: string[]; 
   );
 }
 
-export function MatchBreakdown({ match }: { match: MatchResult }) {
+export function MatchBreakdown({ match, job }: { match: MatchResult; job?: Job }) {
   const d = match.detail;
   if (!d) return null;
 
@@ -51,6 +52,10 @@ export function MatchBreakdown({ match }: { match: MatchResult }) {
           </ul>
         </details>
       </div>
+
+      <ScoreSummary match={match} />
+      <Points title="Strengths" points={d.strengths ?? []} />
+      <Points title="Gaps" points={d.gaps ?? []} />
 
       <section aria-label="How the score is built">
         <h3 className="font-display text-base font-semibold">How the score is built</h3>
@@ -89,9 +94,11 @@ export function MatchBreakdown({ match }: { match: MatchResult }) {
             <ul className="mt-2 flex flex-wrap gap-1.5">
               {d.transferable.map((t) => (
                 <li key={t.skill}>
-                  <Badge tone="info">
-                    {t.skill} (you have {t.via})
-                  </Badge>
+                  <span title={t.why}>
+                    <Badge tone="info">
+                      {t.skill} (you have {t.via})
+                    </Badge>
+                  </span>
                 </li>
               ))}
             </ul>
@@ -130,7 +137,7 @@ export function MatchBreakdown({ match }: { match: MatchResult }) {
         </section>
       )}
 
-      {d.experienceGaps.length > 0 && (
+      {!d.gaps && d.experienceGaps.length > 0 && (
         <section aria-label="Gaps">
           <h3 className="font-display text-base font-semibold">Gaps to be ready for</h3>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
@@ -140,6 +147,8 @@ export function MatchBreakdown({ match }: { match: MatchResult }) {
           </ul>
         </section>
       )}
+
+      {job && <Corrections job={job} />}
     </div>
   );
 }
