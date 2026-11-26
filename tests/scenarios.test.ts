@@ -303,6 +303,10 @@ describe("posting status, normalization and dedup", () => {
   it("drops hidden HTML text", () => {
     expect(stripHtml("<p>Visible</p><!-- hidden words --><script>alert(1)</script>")).toBe("Visible");
   });
+  it("decodes each entity once and keeps a plain less-than sign", () => {
+    expect(stripHtml("Use &amp;lt;br&amp;gt; &lt; &quot;x&quot;")).toBe('Use &lt;br&gt; < "x"');
+    expect(stripHtml("Teams of < 5 people<br>Remote")).toBe("Teams of < 5 people\nRemote");
+  });
   it("leaves no script tag behind when blocks are nested or unclosed", () => {
     for (const html of ["<scr<!-- x -->ipt>alert(1)</script>ok", "<<script></script>script ok", "ok <script", "ok <<script x"]) {
       expect(stripHtml(html)).not.toMatch(/<script/i);
