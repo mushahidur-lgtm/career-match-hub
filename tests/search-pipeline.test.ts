@@ -114,6 +114,7 @@ describe("eligibility in search", () => {
     const body = await search(facts);
     expect(body.excluded!.map((j) => j.id)).toEqual(["adzuna-2"]);
     expect(body.jobs.map((j) => j.id)).toEqual(["adzuna-1"]);
+    expect(body.excluded![0].match!.ai!.status).toBe("not_shortlisted");
     expect((callStructured.mock.calls[0][0] as { user: string }).user).not.toMatch(/Canadian citizens/);
   });
 });
@@ -142,6 +143,7 @@ describe("AI stage", () => {
     vi.stubEnv("AI_SHORTLIST", "0");
     const body = await search(facts);
     expect(body.ai!.status).toBe("skipped");
+    expect(body.jobs.every((j) => j.match!.ai!.status === "not_shortlisted")).toBe(true);
     expect(callStructured).not.toHaveBeenCalled();
   });
   it("logs no resume or prompt content when a call fails", async () => {

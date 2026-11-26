@@ -23,7 +23,7 @@ export function transfersFor(skill: string, has: (s: string) => boolean): Transf
     if (!fam.skills.some((s) => same(s, skill))) continue;
     for (const via of fam.skills) {
       if (same(via, skill) || !has(via) || out.some((t) => same(t.via, via))) continue;
-      out.push({ skill, via, credit: fam.credit, why: `${via} and ${skill} are both a ${fam.id}. The ideas carry over; the product is different.` });
+      out.push({ skill, via, credit: fam.credit, why: `${via} and ${skill} fill the same role (${fam.id}). The ideas carry over; the product is different.` });
     }
   }
   return out;

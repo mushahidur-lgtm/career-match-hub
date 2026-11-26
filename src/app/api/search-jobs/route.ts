@@ -64,6 +64,9 @@ export async function POST(req: Request) {
   let ranked = split.ranked.slice(0, MAX_RESULTS);
   const excluded = split.excluded.slice(0, MAX_EXCLUDED);
 
+  // With Claude connected, a job it was not asked about says so rather than "not connected".
+  const notReviewed = (job: Job): Job => (job.match && isAiConfigured() ? { ...job, match: { ...job.match, ai: { status: "not_shortlisted" } } } : job);
+
   let scoring: SearchResponse["scoring"] = input ? "heuristic" : "none";
   let ai: SearchResponse["ai"];
 
@@ -76,8 +79,8 @@ export async function POST(req: Request) {
       ranked = ranked.map((job) => {
         const assessment = outcome.assessments.get(job.id);
         if (assessment) return { ...job, match: scoreJob(job, input, assessment) };
-        const status = shortlist.some((s) => s.id === job.id) ? ("failed" as const) : ("not_shortlisted" as const);
-        return { ...job, match: job.match && { ...job.match, ai: { status } } };
+        if (!shortlist.some((s) => s.id === job.id)) return notReviewed(job);
+        return { ...job, match: job.match && { ...job.match, ai: { status: "failed" as const } } };
       });
       ranked.sort(compareByFit);
       const reviewed = outcome.assessments.size;
@@ -86,6 +89,7 @@ export async function POST(req: Request) {
       if (outcome.status === "failed") warnings.push(`${outcome.error} Showing rule-based scores instead.`);
       else if (outcome.status === "partial") warnings.push(`Claude reviewed ${reviewed} of ${shortlist.length} shortlisted jobs. The rest show rule-based scores.`);
     }
+    if (isAiConfigured() && !shortlist.length) ranked = ranked.map(notReviewed);
     if (ai.status === "unavailable") warnings.push("Claude is not connected, so these are rule-based scores only.");
   }
 
@@ -95,7 +99,7 @@ export async function POST(req: Request) {
     provider,
     scoring,
     warnings,
-    ...(excluded.length ? { excluded } : {}),
+    ...(excluded.length ? { excluded: excluded.map(notReviewed) } : {}),
     ...(ai ? { ai } : {}),
   };
   return NextResponse.json(body);
