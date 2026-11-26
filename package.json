@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "eval:recruiters": "node scripts/eval-recruiters.mjs",
+    "benchmark": "node scripts/benchmark.mjs",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium"
   },
