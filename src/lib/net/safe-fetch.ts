@@ -30,6 +30,8 @@ for (const [net, bits] of [
   ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16], ["172.16.0.0", 12],
   ["192.0.0.0", 24], ["192.0.2.0", 24], ["192.88.99.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15],
   ["198.51.100.0", 24], ["203.0.113.0", 24], ["224.0.0.0", 4], ["240.0.0.0", 4],
+  // Azure's platform address: public by number, but only reachable from inside that cloud.
+  ["168.63.129.16", 32],
 ] as const) blocked4.addSubnet(net, bits, "ipv4");
 
 // For IPv6 only ordinary global unicast is allowed, minus the ranges that wrap IPv4 addresses or are reserved.
@@ -37,7 +39,8 @@ for (const [net, bits] of [
 const global6 = new BlockList();
 global6.addSubnet("2000::", 3, "ipv6");
 const blocked6 = new BlockList();
-for (const [net, bits] of [["2001::", 32], ["2001:db8::", 32], ["2002::", 16]] as const) blocked6.addSubnet(net, bits, "ipv6");
+// 2001::/23 holds the protocol assignments (Teredo, benchmarking, ORCHID).
+for (const [net, bits] of [["2001::", 23], ["2001:db8::", 32], ["2002::", 16], ["3fff::", 20]] as const) blocked6.addSubnet(net, bits, "ipv6");
 
 export function isPublicAddress(address: string): boolean {
   const family = isIP(address);
@@ -92,6 +95,11 @@ export const realTransport: Transport = {
         {
           method: "GET",
           signal,
+          // A new connection every time. A pooled socket would skip the address check below, and the shared
+          // agent can also be pointed at a proxy that resolves names itself.
+          agent: false,
+          // Stated so that a process-wide override cannot switch certificate checks off for these requests.
+          rejectUnauthorized: true,
           // The connection goes only to the address that was checked.
           lookup: ((_host: string, options: { all?: boolean }, cb: (err: Error | null, address: unknown, family?: number) => void) =>
             options?.all ? cb(null, [pinned]) : cb(null, pinned.address, pinned.family)) as never,
@@ -116,7 +124,7 @@ export interface SafeFetchOptions {
   transport?: Transport;
   timeoutMs?: number;
   maxBytes?: number;
-  /** Return false to stop before following a redirect to an address the caller will not read. */
+  /** Which addresses the caller is willing to read. Checked on the first request and on every redirect. */
   allowHop?: (url: URL) => boolean;
 }
 
@@ -130,6 +138,7 @@ export async function safeFetch(raw: string, options: SafeFetchOptions = {}): Pr
   const within = <T>(work: Promise<T>) => Promise.race([work, timedOut]);
 
   let url = checkUrl(raw);
+  if (allowHop && !allowHop(url)) throw new SafeFetchError("blocked_url");
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const host = url.hostname.replace(/^\[|\]$/g, "");
     let addresses: { address: string; family: number }[];
@@ -153,7 +162,13 @@ export async function safeFetch(raw: string, options: SafeFetchOptions = {}): Pr
     const location = header(res.headers, "location");
     if (res.status >= 300 && res.status < 400 && location) {
       res.close?.();
-      const next = checkUrl(new URL(location, url).toString());
+      let target: string;
+      try {
+        target = new URL(location, url).toString();
+      } catch {
+        throw new SafeFetchError("blocked_url");
+      }
+      const next = checkUrl(target);
       if (allowHop && !allowHop(next)) return { status: res.status, url: next.toString(), redirected: true, body: "" };
       url = next;
       continue;

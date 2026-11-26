@@ -29,9 +29,11 @@ export function robotsAllows(text: string, path: string): boolean {
   const groups: { agents: string[]; rules: { allow: boolean; path: string }[] }[] = [];
   let open = false;
   for (const raw of text.split(/\r?\n/)) {
-    const m = raw.replace(/#.*/, "").match(/^\s*([A-Za-z-]+)\s*:\s*(.*?)\s*$/);
-    if (!m) continue;
-    const [field, value] = [m[1].toLowerCase(), m[2]];
+    // Split by hand: the file is remote, and a pattern with repeating space matchers can be made to crawl.
+    const line = raw.split("#", 1)[0];
+    const colon = line.indexOf(":");
+    if (colon < 0) continue;
+    const [field, value] = [line.slice(0, colon).trim().toLowerCase(), line.slice(colon + 1).trim()];
     if (field === "user-agent") {
       if (!open) groups.push({ agents: [], rules: [] });
       groups[groups.length - 1].agents.push(value.toLowerCase());

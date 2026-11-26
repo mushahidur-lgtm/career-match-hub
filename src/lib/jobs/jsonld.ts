@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { stripHtml, stripTags } from "@/lib/providers/common";
+import { elements, stripTags } from "@/lib/html";
+import { stripHtml } from "@/lib/providers/common";
 import { guardPosting } from "./sanitize";
 
 /**
@@ -28,7 +29,8 @@ export function cleanText(html: string): string {
   // Some sites escape the HTML inside the JSON, which leaves tags behind. Only the tags are removed on the
   // second pass: decoding again would turn escaped text back into markup.
   if (/<\/?(?:p|br|ul|li|div|strong|h\d|script)\b/i.test(text)) text = stripTags(text);
-  return guardPosting(text).clean.trim().slice(0, 20_000);
+  // Cut before the guard reads it: no posting needs more, and a hostile one could be far longer.
+  return guardPosting(text.slice(0, 40_000)).clean.trim().slice(0, 20_000);
 }
 
 function* postings(node: unknown, depth = 0): Generator<unknown> {
@@ -44,9 +46,9 @@ function* postings(node: unknown, depth = 0): Generator<unknown> {
 
 export function readJobPostings(html: string): StructuredPosting[] {
   const out: StructuredPosting[] = [];
-  const blocks = html.matchAll(/<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script[^>]*>/gi);
   let seen = 0;
-  for (const [, body] of blocks) {
+  for (const { attributes, body } of elements(html, "script")) {
+    if (!/type\s*=\s*["']application\/ld\+json["']/i.test(attributes.slice(0, 500))) continue;
     if (++seen > MAX_BLOCKS) break;
     let json: unknown;
     try {
@@ -72,6 +74,6 @@ export function readJobPostings(html: string): StructuredPosting[] {
 
 /** The text of the page's main content, or null when the page does not mark one. */
 export function mainText(html: string): string | null {
-  const block = html.match(/<(main|article)\b[^>]*>([\s\S]*?)<\/\1[^>]*>/i)?.[2];
+  const block = (elements(html, "main").next().value ?? elements(html, "article").next().value)?.body;
   return block ? cleanText(block) : null;
 }
