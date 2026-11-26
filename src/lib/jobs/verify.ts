@@ -1,9 +1,7 @@
-import { CLOSED_TEXT } from "@/lib/job-quality";
 import { titleSimilarity } from "@/lib/matching/engine";
-import { stripHtml } from "@/lib/providers/common";
 import type { Job, Verification, VerificationState } from "@/types/job";
 import type { PageResult } from "./job-page";
-import { readJobPostings, type StructuredPosting } from "./jsonld";
+import type { StructuredPosting } from "./jsonld";
 
 /**
  * What can be said about whether a job is still open. "Closed" and "expired" need positive evidence from the
@@ -11,7 +9,6 @@ import { readJobPostings, type StructuredPosting } from "./jsonld";
  * the page to publish this job as an open posting.
  */
 
-const CHALLENGE = /captcha|are you (?:a )?human|verify you are human|cf-challenge|challenge-platform|<title>\s*just a moment/i;
 export const SAME_JOB = 0.6;
 
 export const samePosting = (jobTitle: string, found: StructuredPosting) => titleSimilarity(found.title, [jobTitle]) >= SAME_JOB;
@@ -63,21 +60,20 @@ export function verifyPosting(job: Pick<Job, "title" | "applyUrl" | "source">, r
   if (page.status >= 300 && page.status < 400) return make("unverified", "The link redirects to a site this app does not read. Open it to check.", finalUrl);
   if (page.status !== 200) return make("verification_failed", `The site did not allow the check (status ${page.status}). That says nothing about whether the job is open.`, finalUrl);
 
-  const posting = readJobPostings(page.body).find((p) => samePosting(job.title, p));
-  if (!posting && CHALLENGE.test(page.body)) return make("verification_failed", "The site asked for a human check, so the page could not be read.", finalUrl);
+  const posting = page.postings.find((p) => samePosting(job.title, p));
+  if (!posting && page.humanCheck) return make("verification_failed", "The site asked for a human check, so the page could not be read.", finalUrl);
 
   if (posting?.validThrough) {
     // A bare date means the posting is open through that day.
     const end = Date.parse(posting.validThrough.length === 10 ? `${posting.validThrough}T23:59:59` : posting.validThrough);
     if (Number.isFinite(end) && end < now.getTime()) return make("expired", `The employer's page gives a closing date that has passed (${posting.validThrough.slice(0, 10)}).`, finalUrl);
   }
-  const visible = stripHtml(page.body);
-  if (CLOSED_TEXT.test(visible)) return make("closed", "The page says the position is closed or no longer accepting applications.", finalUrl);
+  if (page.saysClosed) return make("closed", "The page says the position is closed or no longer accepting applications.", finalUrl);
   if (posting) return make("verified_active", "The employer's page publishes this job as an open posting.", finalUrl);
   if (page.redirected && job.applyUrl && !isGeneralPage(job.applyUrl) && isGeneralPage(page.url)) {
     return make("link_unavailable", "The link now leads to a general careers page. The posting may have been removed.", finalUrl);
   }
-  return visible.toLowerCase().includes(job.title.toLowerCase())
+  return page.visible.includes(job.title.toLowerCase())
     ? make("partially_verified", "The page loads and names this job, but does not state that it is still open.", finalUrl)
     : make("unverified", "The page loads but does not clearly show this job.", finalUrl);
 }

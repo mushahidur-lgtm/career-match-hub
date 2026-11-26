@@ -1,7 +1,6 @@
 import { SHORT_DESCRIPTION } from "@/lib/job-quality";
 import type { DescriptionSource, DescriptionStatus, Enrichment, Job } from "@/types/job";
 import type { PageResult } from "./job-page";
-import { mainText, readJobPostings } from "./jsonld";
 import { samePosting } from "./verify";
 
 /**
@@ -30,12 +29,12 @@ const squash = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
 /** What the employer's page offers for this job, if it is demonstrably the same job. */
 export function pageCandidates(job: EnrichableJob, result: PageResult): Candidate[] {
   if (result.kind !== "page" || result.page.status !== 200) return [];
-  const out: Candidate[] = readJobPostings(result.page.body)
+  const out: Candidate[] = result.page.postings
     .filter((p) => samePosting(job.title, p))
     .map((p) => ({ source: "json_ld" as const, text: p.description }));
   // Page text is trusted only when it contains the opening of the description we already hold.
   const opening = squash(job.description).replace(/(?:…|\.\.\.)$/, "").slice(0, 80);
-  const main = mainText(result.page.body);
+  const main = result.page.main;
   if (main && opening.length >= 40 && squash(main).includes(opening)) out.push({ source: "employer_page", text: main });
   return out;
 }

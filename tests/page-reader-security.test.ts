@@ -241,6 +241,30 @@ describe("hostile content cannot stall the server", () => {
   });
 });
 
+describe("what the cache keeps", () => {
+  it("never the page body: a full-size page is stored as a small summary", async () => {
+    const filler = "Data work. ".repeat(130_000);
+    const posting = JSON.stringify({ "@type": "JobPosting", title: "Developer", description: "d".repeat(100_000) });
+    const body = `<main>${filler}</main>` + `<script type="application/ld+json">${posting}</script>`.repeat(9);
+    expect(body.length).toBeGreaterThan(1_400_000);
+    const n = net((u) => (u.pathname === "/robots.txt" ? { status: 404 } : { body: body.slice(0, 1_499_000) }));
+    const result = await loadJobPage({ applyUrl: PAGE }, { transport: n.transport });
+    expect(result.kind).toBe("page");
+    expect(JSON.stringify(result).length).toBeLessThan(200_000);
+    expect(result).not.toHaveProperty("page.body");
+    // The cached summary is what a second caller gets, without another request.
+    const before = n.sent.length;
+    expect(await loadJobPage({ applyUrl: PAGE }, { transport: n.transport })).toBe(result);
+    expect(n.sent).toHaveLength(before);
+  });
+  it("accepts Oracle recruiting hosts only in their own shape", () => {
+    expect(isJobSystemUrl("https://eeho.fa.us2.oraclecloud.com/x")).toBe(true);
+    for (const url of ["https://a.b.fa.us2.oraclecloud.com/x", "https://x.fa.oraclecloud.com/x", "https://fa.us2.oraclecloud.com/x", "https://x.fa.a.b.c.oraclecloud.com/x"]) {
+      expect(isJobSystemUrl(url), url).toBe(false);
+    }
+  });
+});
+
 describe("off by default", () => {
   it("is enabled by JOB_PAGE_FETCH=1 and nothing else", async () => {
     for (const value of ["", "0", "true", "yes", "on", "2"]) {

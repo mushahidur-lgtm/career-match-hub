@@ -31,7 +31,7 @@ const JOB_SYSTEMS = [
 ];
 
 /** Oracle's recruiting hosts. The rest of oraclecloud.com holds customers' own files, so it is not included. */
-const ORACLE_RECRUITING = /\.fa(?:\.[a-z0-9-]{1,30}){0,2}\.oraclecloud\.com$/;
+const ORACLE_RECRUITING = /^[a-z0-9-]{1,63}\.fa(?:\.[a-z0-9-]{1,30}){1,2}\.oraclecloud\.com$/;
 
 export function isJobSystemUrl(raw: string | URL): boolean {
   let url: URL;

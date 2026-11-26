@@ -1,8 +1,9 @@
 import "server-only";
 import { allowedByRobots } from "@/lib/net/robots";
-import { checkUrl, safeFetch, SafeFetchError, type FetchFailure, type Page, type Transport } from "@/lib/net/safe-fetch";
+import { checkUrl, safeFetch, SafeFetchError, type FetchFailure, type Transport } from "@/lib/net/safe-fetch";
 import type { Job } from "@/types/job";
 import { isJobSystemUrl } from "./job-systems";
+import { digestPage, type PageDigest } from "./page-digest";
 import { TtlCache } from "./ttl-cache";
 
 /**
@@ -22,10 +23,10 @@ export const successTtlMs = () => hours() * 60 * 60 * 1000;
 
 export type PageResult =
   | { kind: "disabled" | "no_link" | "not_fetchable" | "robots" }
-  | { kind: "page"; page: Page; checkedAt: string }
+  | { kind: "page"; page: PageDigest; checkedAt: string }
   | { kind: "failed"; failure: FetchFailure; checkedAt: string };
 
-const cache = new TtlCache<PageResult>();
+const cache = new TtlCache<PageResult>(100);
 export const clearPageCache = () => cache.clear();
 
 type PageJob = Pick<Job, "applyUrl">;
@@ -58,7 +59,7 @@ export async function loadJobPage(job: PageJob, options: LoadOptions = {}): Prom
         // A redirect that leaves the job systems is reported, not followed.
         allowHop: isJobSystemUrl,
       });
-      result = { kind: "page", page, checkedAt };
+      result = { kind: "page", page: digestPage(page), checkedAt };
     }
   } catch (err) {
     result = { kind: "failed", failure: err instanceof SafeFetchError ? err.kind : "network", checkedAt };
