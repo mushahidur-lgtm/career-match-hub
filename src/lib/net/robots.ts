@@ -49,9 +49,9 @@ export function robotsAllows(text: string, path: string): boolean {
   return best ? best.allow : true;
 }
 
-export async function allowedByRobots(url: URL, transport?: Transport): Promise<boolean> {
+export async function allowedByRobots(url: URL, transport?: Transport, allowHop?: (next: URL) => boolean): Promise<boolean> {
   try {
-    const page = await safeFetch(`${url.origin}/robots.txt`, { transport, maxBytes: 200_000, timeoutMs: 4_000 });
+    const page = await safeFetch(`${url.origin}/robots.txt`, { transport, allowHop, maxBytes: 200_000, timeoutMs: 4_000 });
     if (page.status === 404 || page.status === 410) return true;
     if (page.status !== 200) return false;
     return robotsAllows(page.body, url.pathname + url.search);

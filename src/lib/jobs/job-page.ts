@@ -1,14 +1,14 @@
 import "server-only";
-import { applyLinkInfo } from "@/lib/job-quality";
 import { allowedByRobots } from "@/lib/net/robots";
 import { checkUrl, safeFetch, SafeFetchError, type FetchFailure, type Page, type Transport } from "@/lib/net/safe-fetch";
 import type { Job } from "@/types/job";
+import { isJobSystemUrl } from "./job-systems";
 import { TtlCache } from "./ttl-cache";
 
 /**
- * Loads the employer's own page for one job, once. Only employer sites and applicant tracking systems are
- * read: never a job board or an Adzuna redirect, never anything behind a login, and not where robots.txt
- * says no. Off unless JOB_PAGE_FETCH=1.
+ * Loads the application page for one job, once. Only known job application systems are read (see
+ * job-systems.ts): never an arbitrary site, a job board or an Adzuna redirect, never anything behind a login,
+ * and not where robots.txt says no. Off unless JOB_PAGE_FETCH=1.
  */
 export const pageFetchEnabled = () => process.env.JOB_PAGE_FETCH?.trim() === "1";
 
@@ -28,14 +28,9 @@ export type PageResult =
 const cache = new TtlCache<PageResult>();
 export const clearPageCache = () => cache.clear();
 
-type PageJob = Pick<Job, "applyUrl" | "company" | "source">;
+type PageJob = Pick<Job, "applyUrl">;
 
-const BARRED = ["redirect", "job-board", "none"];
-
-export function fetchableLink(job: PageJob): boolean {
-  const kind = applyLinkInfo(job).kind;
-  return kind === "employer" || kind === "tracking-system";
-}
+export const fetchableLink = (job: PageJob): boolean => Boolean(job.applyUrl) && isJobSystemUrl(job.applyUrl!);
 
 export interface LoadOptions {
   transport?: Transport;
@@ -56,12 +51,12 @@ export async function loadJobPage(job: PageJob, options: LoadOptions = {}): Prom
   let result: PageResult;
   try {
     const url = checkUrl(job.applyUrl);
-    if (!(await allowedByRobots(url, options.transport))) result = { kind: "robots" };
+    if (!(await allowedByRobots(url, options.transport, isJobSystemUrl))) result = { kind: "robots" };
     else {
       const page = await safeFetch(job.applyUrl, {
         transport: options.transport,
-        // A redirect from an employer to a job board is not followed into the board.
-        allowHop: (next) => !BARRED.includes(applyLinkInfo({ ...job, applyUrl: next.toString() }).kind),
+        // A redirect that leaves the job systems is reported, not followed.
+        allowHop: isJobSystemUrl,
       });
       result = { kind: "page", page, checkedAt };
     }

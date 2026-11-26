@@ -92,7 +92,8 @@ and a message that Claude is not connected.
 
 ## 6. Retrieval and verification
 
-See the README. Enrichment runs only when you check a job, so **search-time scoring still reads Adzuna's
+See the README. Page reads are limited to known job application systems: employers' own careers sites are
+not read. Enrichment runs only when you check a job, so **search-time scoring still reads Adzuna's
 cut-off text**. For listings whose apply link is an Adzuna redirect (most Adzuna results), no employer page
 is available and nothing improves. JSearch listings benefit most.
 

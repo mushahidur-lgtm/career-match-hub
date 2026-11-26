@@ -10,6 +10,7 @@ import { parseRequirements, requiredYearsIn } from "@/lib/matching/requirements"
 import { splitSections } from "@/lib/resume-sections";
 import { chooseDescription } from "@/lib/jobs/enrich";
 import { clearPageCache, FAILURE_TTL_MS, loadJobPage } from "@/lib/jobs/job-page";
+import { isJobSystemUrl } from "@/lib/jobs/job-systems";
 import { mainText, readJobPostings } from "@/lib/jobs/jsonld";
 import { robotsAllows } from "@/lib/net/robots";
 import { checkUrl, isPublicAddress, realTransport, safeFetch, type RawResponse, type Transport } from "@/lib/net/safe-fetch";
@@ -20,7 +21,7 @@ import { makeJob } from "./helpers";
 const NOW = Date.parse("2026-11-26T12:00:00Z");
 const FULL = "We are hiring a Data Engineer to build pipelines with Python and SQL. ".repeat(20).trim();
 const SNIPPET = "We are hiring a Data Engineer to build pipelines with Python and SQL. We are hi…";
-const URL_ = "https://careers.acme.example.com/jobs/123";
+const URL_ = "https://acme.wd3.myworkdayjobs.com/jobs/123";
 
 const job = (over: Partial<CheckableJob> = {}): CheckableJob => ({
   id: "adzuna-1",
@@ -227,6 +228,37 @@ describe("what is never fetched", () => {
     }
     expect(n.seen).toEqual([]);
   });
+  it("reads only known job application systems, matched by whole host name", async () => {
+    for (const url of ["https://boards.greenhouse.io/acme/jobs/1", "https://jobs.lever.co/acme/1", "https://acme.wd3.myworkdayjobs.com/x", "https://eeho.fa.us2.oraclecloud.com/hcmUI/job/1", "https://emploisfp-psjobs.cfp-psc.gc.ca/psrs"]) {
+      expect(isJobSystemUrl(url), url).toBe(true);
+    }
+    for (const url of [
+      "https://careers.acme.com/jobs/1",
+      "https://greenhouse.io.evil.example/x",
+      "https://evilgreenhouse.io/x",
+      "https://successfactors.evil.example/x",
+      "https://objectstorage.us-ashburn-1.oraclecloud.com/n/b/o/page.html",
+      "http://jobs.lever.co/acme/1",
+      "https://user:pw@jobs.lever.co/1",
+      "https://jobs.lever.co:8443/1",
+      "not a url",
+    ]) {
+      expect(isJobSystemUrl(url), url).toBe(false);
+    }
+    const n = net({});
+    expect((await loadJobPage(job({ applyUrl: "https://careers.acme.com/jobs/1" }), { transport: n.transport })).kind).toBe("not_fetchable");
+    expect(n.seen).toEqual([]);
+  });
+  it("does not follow a redirect off the job systems, from the page or from robots.txt", async () => {
+    const page = net({ "/jobs/123": { status: 302, headers: { location: "https://careers.acme.com/secret" } } });
+    await checkJob(job(), { transport: page.transport, now: () => NOW });
+    expect(page.seen.some((u) => u.includes("careers.acme.com"))).toBe(false);
+    clearPageCache();
+    const robots = net({ "/robots.txt": { status: 302, headers: { location: "https://careers.acme.com/robots.txt" } } });
+    await checkJob(job(), { transport: robots.transport, now: () => NOW });
+    expect(robots.seen.some((u) => u.includes("careers.acme.com"))).toBe(false);
+    expect(robots.pages().filter((u) => u.includes("/jobs/123"))).toEqual([]);
+  });
   it("does not follow an employer's redirect into a job board", async () => {
     const n = net({ "/jobs/123": { status: 302, headers: { location: "https://www.indeed.com/viewjob?jk=1" } } });
     const r = await checkJob(job(), { transport: n.transport, now: () => NOW });
@@ -277,7 +309,7 @@ describe("posting verification", () => {
     expect((await state({ status: 404 })).verification.state).toBe("link_unavailable");
     clearPageCache();
     const r = await check({ "/jobs/123": { status: 301, headers: { location: "/careers" } }, "/careers": { body: html("<h1>Careers</h1>") } });
-    expect(r.verification).toMatchObject({ state: "link_unavailable", finalUrl: "https://careers.acme.example.com/careers" });
+    expect(r.verification).toMatchObject({ state: "link_unavailable", finalUrl: "https://acme.wd3.myworkdayjobs.com/careers" });
     expect((await state({}, { applyUrl: null })).verification.state).toBe("link_unavailable");
   });
 });

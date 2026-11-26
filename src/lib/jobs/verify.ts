@@ -49,7 +49,7 @@ export function verifyPosting(job: Pick<Job, "title" | "applyUrl" | "source">, r
     case "disabled":
       return make("unverified", "Page checks are switched off on this site. Open the link to see whether the job is still posted.");
     case "not_fetchable":
-      return make("unverified", "The link goes to a job board or redirect, which this app does not read. Open it to check.");
+      return make("unverified", "This app only reads known job application systems, and the link is not one of them. Open it to check.");
     case "robots":
       return make("unverified", "The site asks automated tools not to read this page. Open it to check.");
     case "failed":
@@ -60,7 +60,7 @@ export function verifyPosting(job: Pick<Job, "title" | "applyUrl" | "source">, r
   const finalUrl = page.redirected ? { finalUrl: page.url } : {};
   if (page.status === 410) return make("closed", "The site says this posting has been removed (410 Gone).", finalUrl);
   if (page.status === 404) return make("link_unavailable", "The page was not found (404). The posting may have been removed, or the link may be broken.", finalUrl);
-  if (page.status >= 300 && page.status < 400) return make("unverified", "The link redirects to a job board, which this app does not read.", finalUrl);
+  if (page.status >= 300 && page.status < 400) return make("unverified", "The link redirects to a site this app does not read. Open it to check.", finalUrl);
   if (page.status !== 200) return make("verification_failed", `The site did not allow the check (status ${page.status}). That says nothing about whether the job is open.`, finalUrl);
 
   const posting = readJobPostings(page.body).find((p) => samePosting(job.title, p));
