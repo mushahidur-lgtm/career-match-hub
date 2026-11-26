@@ -250,6 +250,39 @@ describe("caps and career alignment", () => {
   });
 });
 
+describe("the deterministic score stands alone", () => {
+  // Short, cut-off and with little else to go on: right where a confidence threshold would flip.
+  const edge = { ...scenario("A"), description: "Requirements:\n- C#, .NET and SQL Server\n" + "We build services. ".repeat(14), descriptionTruncated: true };
+  const bare = input(undefined, { resumeText: null, profile: { ...CANDIDATE, yearsOfExperience: null } });
+  const jobs = [scenario("A"), scenario("G"), edge];
+
+  it("is the same whether or not Claude reviewed the job", () => {
+    for (const job of jobs) {
+      for (const i of [input(), bare]) expect(scoreJob(job, i, { adjustment: 0 }).deterministicScore).toBe(scoreJob(job, i).deterministicScore);
+    }
+  });
+  it("does not depend on the posting's status", () => {
+    for (const job of jobs) {
+      for (const i of [input(), bare]) {
+        const scores = (["retrieved", "partial", "expired", "unverified"] as const).map((postingStatus) => scoreJob({ ...job, postingStatus }, i).score);
+        expect(new Set(scores).size).toBe(1);
+      }
+    }
+  });
+});
+
+describe("evidence reaches the caps", () => {
+  it("holds a job down when what is shown covers under half of the required skills", () => {
+    const m = withReqs("C#, Python, Java and COBOL");
+    expect(m.detail!.requiredMatched).toEqual(expect.arrayContaining(["C#", "Python", "Java"]));
+    expect(m.score).toBeLessThanOrEqual(65);
+    expect(m.detail!.capLimit).toBeLessThanOrEqual(65);
+  });
+  it("leaves the strong and transferable fixtures uncapped", () => {
+    for (const id of ["A", "B"]) expect(run(id).detail!.caps).toEqual([]);
+  });
+});
+
 describe("posting status, normalization and dedup", () => {
   const long = "Build integrations. ".repeat(40);
   it("never calls a posting expired for its age alone", () => {

@@ -91,8 +91,8 @@ optional `excluded` and `ai`; v2 fields on `match` and jobs. Compatibility notes
 `feedback` list (cap 1000) in the backup blob and sync. Backup version unchanged. An older build reading a
 newer backup would drop the new fields.
 
-**Deeper evaluation on open** is the existing on-demand `/api/job-insights`, which receives the v2 match.
-No new route.
+**Deeper evaluation on open** (optional in the brief) is **not implemented**. The existing
+`/api/job-insights` rewrites resume lines; it does not re-evaluate fit.
 
 ## 6. Existing tests changed on purpose
 
@@ -124,13 +124,18 @@ Rules only, no AI, no stated facts. Reproduce with
 ## 8. AI call volume and cost (estimate, not measured)
 
 Per search: at most 2 calls of 10 jobs (before: 1 call of 15). Cached repeats make 0 calls; the morning run
-makes 0. Rough size per uncached search: about 25k input and 7-10k output tokens. At Claude Sonnet 5.5 list
-prices ($2 / $10 per million tokens, cached from 2026-11-03) that is about $0.12-0.15, roughly double the
-old review. No live call was made while building this, so check real usage. `AI_SHORTLIST` lowers it.
+makes 0. Rough size per uncached search: about 25k input and 7-10k output tokens, about double the old review.
+
+Model: the code default is still `claude-sonnet-4-5` (unless `ANTHROPIC_MODEL` is set), which retires on
+2026-11-30; the app then falls back to `claude-sonnet-5-5` by itself. At Sonnet 5.5 list prices ($2 / $10 per
+million tokens, price table cached 2026-11-03) a search is about $0.12-0.15. No price is given for 4.5. No
+live call was made, so check real usage. `AI_SHORTLIST` lowers it.
 
 ## 9. Not verified and outstanding
 
 * No live Claude, Adzuna, JSearch or Supabase call was made. They are covered with mocks only.
+* Deeper evaluation when a result is opened is not implemented.
+* Without resume text every skill counts as listed, so jobs with three or more required skills are capped at 65.
 * Evidence credits, cap limits and the +/-15 bound are starting assumptions, not calibrated on outcomes.
 * Rules scores can still be generous: skills are 25% of the total, so a job with weak skill coverage but a
   matching title and duties can read as a strong match.
@@ -140,3 +145,15 @@ old review. No live call was made while building this, so check real usage. `AI_
 * Eligibility facts cover Canada only.
 * The AI cache is per server instance, in memory, for one hour; it holds assessments, which quote resume lines.
 * Feedback is captured but nothing reads it yet.
+
+## 10. Validation output (run on the final code)
+
+```
+vitest run            Test Files  34 passed (34)   Tests  718 passed (718)
+tsc --noEmit          exit 0
+eslint                exit 0
+next build            Compiled successfully; 10/10 static pages
+                      / and /_not-found static; /api/analyze-resume, cron/daily, find-recruiter,
+                      interview-prep, job-insights, networking-draft, parse-resume, search-jobs, status dynamic
+playwright test       7 passed
+```

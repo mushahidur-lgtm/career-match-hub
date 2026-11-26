@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_FILTERS, DEFAULT_PREFERENCES, type Job, type SearchResponse } from "@/types/job";
 import { CANDIDATE, CANDIDATE_RESUME, SCENARIOS } from "./fixtures/matching-fixtures";
+import { makeJob } from "./helpers";
 
 const callStructured = vi.fn();
 let aiOn = true;
@@ -13,7 +14,7 @@ vi.mock("@/lib/anthropic", () => ({
 }));
 
 const { POST } = await import("@/app/api/search-jobs/route");
-const { clearAssessmentCache } = await import("@/lib/ai/career-fit");
+const { clearAssessmentCache, reviewJobs } = await import("@/lib/ai/career-fit");
 
 const longText = (id: string) => SCENARIOS.find((s) => s.id === id)!.job.description;
 const adzuna = {
@@ -138,6 +139,13 @@ describe("AI stage", () => {
     expect(second.ai).toMatchObject({ status: "applied", calls: 0, cached: 1 });
     expect(callStructured).toHaveBeenCalledTimes(1);
     expect(second.jobs[0].match!.score).toBe(first.jobs[0].match!.score);
+  });
+  it("stops, and reports it, once the overall deadline has passed", async () => {
+    let calls = 0;
+    const clock = () => (calls++ === 0 ? 0 : 200_000);
+    const outcome = await reviewJobs([makeJob()], { profile: CANDIDATE, resumeText: CANDIDATE_RESUME }, clock);
+    expect(outcome).toMatchObject({ status: "failed", calls: 0, error: "Claude took too long." });
+    expect(callStructured).not.toHaveBeenCalled();
   });
   it("can be switched off", async () => {
     vi.stubEnv("AI_SHORTLIST", "0");

@@ -168,7 +168,7 @@ A part the posting gives no information about is skipped, and the remaining part
 
 **Eligibility** (citizenship or residency, work authorization, sponsorship, clearance, required languages) is checked against facts you enter in Settings. A job is ruled out only when the posting states a requirement and your own statement contradicts it. Anything unknown is "needs verification". Ruled-out and closed jobs are listed separately with the reason.
 
-**Score limits.** A total is held down, and the reason shown, when: fewer than half of the required skills are matched (65); none are (55); the role is outside your work and targets (60); the skill words match but the day-to-day work does not (60); the role is three or more levels above you (55), two above (70) or two or more below (65); it is outside your cities (69); it mentions a word you excluded (50); or there is too little detail to call it excellent (89).
+**Score limits.** A total is held down, and the reason shown, when: what your resume shows covers under half of the required skills, counting listed and related skills only in part (65); none are (55); the role is outside your work and targets (60); the skill words match but the day-to-day work does not (60); the role is three or more levels above you (55), two above (70) or two or more below (65); it is outside your cities (69); it mentions a word you excluded (50); or there is too little detail to call it excellent (89).
 
 **Confidence** is a separate 0 to 100 value with a High, Medium or Low label: how much there was to judge by. It never changes the score.
 

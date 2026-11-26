@@ -400,7 +400,9 @@ export function scoreJob(job: MatchableJob, input: MatchInput, ai?: AiAssessment
 
   /* caps: keyword overlap alone must not produce a high score */
   const caps: { limit: number; reason: string }[] = [];
-  if (required.length >= 3 && reqCoverage !== null && reqCoverage < 0.5) caps.push({ limit: 65, reason: "fewer than half of the required skills are matched" });
+  // Weighted by evidence: skills that are merely listed or related do not make up half of what a posting requires.
+  const shownCoverage = required.length ? sum(required) / required.length : null;
+  if (required.length >= 3 && shownCoverage !== null && shownCoverage < 0.5) caps.push({ limit: 65, reason: "fewer than half of the required skills are matched by what your resume shows" });
   if (required.length >= 2 && requiredMatched.length === 0) caps.push({ limit: 55, reason: "none of the required skills is on your resume" });
   const targetFit = titleSimilarity(job.title, preferences?.roles ?? []);
   if (roleFit < 0.25 && targetFit < 0.5 && (reqCoverage ?? 0) < 0.8) caps.push({ limit: 60, reason: "the role is outside the work on your resume" });
@@ -410,7 +412,9 @@ export function scoreJob(job: MatchableJob, input: MatchInput, ai?: AiAssessment
   else if (seniorityGap <= -2) caps.push({ limit: 65, reason: "the role is well below your level" });
   if (location.status === "no") caps.push({ limit: 69, reason: "the job is outside your preferred cities" });
   if (career.excludedTerm) caps.push({ limit: 50, reason: `it mentions "${career.excludedTerm}", which you excluded` });
-  if (confidence.label === "low" || required.length < 3) caps.push({ limit: 89, reason: "the posting gives too little detail to call this excellent" });
+  // Decided from the posting alone. Confidence also counts the AI review and posting status, which must never move a score.
+  const thinPosting = description.length < 200 || (description.length < 500 && (job.descriptionTruncated || !req.structured));
+  if (thinPosting || required.length < 3) caps.push({ limit: 89, reason: "the posting gives too little detail to call this excellent" });
   const limit = caps.length ? Math.min(...caps.map((c) => c.limit)) : 100;
 
   /* deterministic score, then Claude's bounded adjustment, then the caps again */
