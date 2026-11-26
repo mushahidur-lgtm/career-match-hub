@@ -79,8 +79,12 @@ describe("certifications", () => {
     expect(run("Must obtain the AZ-204 certification within 6 months of hire.", {}, complete).status).toBe("eligible");
     expect(run("PMP certification is an asset.", {}, complete).checks[0].status).toBe("preferred_missing");
   });
-  it("asks you to check a certificate it cannot name", () => {
-    expect(run("A forklift certification is required.", {}, complete).status).toBe("needs_verification");
+  it("shows a certificate it cannot name without moving the job", () => {
+    for (const line of ["A forklift certification is required.", "A valid driver's licence is required.", "You must manage SSL certificates."]) {
+      const r = run(line, {}, complete);
+      expect(r.status, line).toBe("not_applicable");
+      for (const c of r.checks) expect(c).toMatchObject({ status: "needs_verification", advisory: true });
+    }
   });
   it("never reads a listed technology as a certificate", () => {
     const m = scoreJob({ ...SCENARIOS[0].job, description: `Requirements:\n- Azure\n- ${line}` }, { profile: CANDIDATE, resumeText: CANDIDATE_RESUME });

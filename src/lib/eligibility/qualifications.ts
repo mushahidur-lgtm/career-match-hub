@@ -171,7 +171,8 @@ export function checkQualifications(description: string, mine: Qualifications, n
       // A certificate the posting does not name clearly can only be checked by a person.
       return r.preferred
         ? make("preferred_missing", "The posting mentions a certification as an asset.", stated)
-        : make("needs_verification", "The posting asks for a certification this app could not identify. Read the line and check.", stated, !r.explicit);
+        : // Licences and wording such as "manage SSL certificates" land here, so it is shown but never moves the job.
+          make("needs_verification", "The posting mentions a certification or licence this app could not identify. Read the line and check.", stated, true);
     }
     const what = `${r.name} certification`;
     const matching = held.filter((c) => certificateKeys(c.name).some((k) => r.keys.includes(k)));

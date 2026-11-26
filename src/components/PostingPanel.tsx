@@ -5,6 +5,7 @@ import { applyCheck, DESCRIPTION_LABEL, VERIFICATION_LABEL } from "@/lib/jobs/ap
 import type { JobCheck } from "@/lib/jobs/check";
 import type { MatchInput } from "@/lib/matching/engine";
 import type { ApiError, Job } from "@/types/job";
+import { useContacts } from "./contacts/context";
 import { safeUrl } from "./job-parts";
 import { Badge, Notice, Spinner, secondaryButton } from "./ui";
 
@@ -21,6 +22,7 @@ interface Props {
 /** Whether the job still looks open and how much of it we have. Kept apart from the match score. */
 export function PostingPanel({ job, input, aiAvailable, onChecked }: Props) {
   const [state, setState] = useState<{ loading: boolean; error: string | null }>({ loading: false, error: null });
+  const { getToken } = useContacts();
   const v = job.verification;
   const e = job.enrichment;
   const apply = safeUrl(job.applyUrl);
@@ -29,9 +31,11 @@ export function PostingPanel({ job, input, aiAvailable, onChecked }: Props) {
   async function check() {
     setState({ loading: true, error: null });
     try {
+      // Sites with sign-in configured require it for this check.
+      const token = await getToken();
       const res = await fetch("/api/job-check", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({
           job: { id: job.id, title: job.title, company: job.company, source: job.source, applyUrl: job.applyUrl, description: job.description.slice(0, 60_000), descriptionTruncated: job.descriptionTruncated, postedAt: job.postedAt },
         }),

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { stripHtml } from "@/lib/providers/common";
+import { stripHtml, stripTags } from "@/lib/providers/common";
 import { guardPosting } from "./sanitize";
 
 /**
@@ -25,8 +25,9 @@ const MAX_BLOCKS = 10;
 
 export function cleanText(html: string): string {
   let text = stripHtml(html);
-  // Some sites escape the HTML inside the JSON, which leaves tags behind after one pass.
-  if (/<\/?(?:p|br|ul|li|div|strong|h\d)\b/i.test(text)) text = stripHtml(text);
+  // Some sites escape the HTML inside the JSON, which leaves tags behind. Only the tags are removed on the
+  // second pass: decoding again would turn escaped text back into markup.
+  if (/<\/?(?:p|br|ul|li|div|strong|h\d|script)\b/i.test(text)) text = stripTags(text);
   return guardPosting(text).clean.trim().slice(0, 20_000);
 }
 

@@ -51,19 +51,23 @@ function removeAll(text: string, pattern: RegExp): string {
 
 const ENTITIES: Record<string, string> = { "&nbsp;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&apos;": "'" };
 
-export function stripHtml(html: string): string {
+/** Removes markup without touching entities. Safe to run again on text that has already been decoded once. */
+export function stripTags(html: string): string {
   // Comments and script or style blocks are never visible to a reader, so their text is not part of the posting.
   const visible = removeAll(html, /<!--[\s\S]*?(?:-->|$)|<(script|style|noscript|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi)
     .replace(/<\s*(?:br|\/p|\/li|\/div|\/h\d)\s*\/?>/gi, "\n")
     .replace(/<li[^>]*>/gi, "• ");
   // Whole tags go; a tag that is never closed loses its angle bracket. A "<" in ordinary text, as in "< 5", stays.
-  return (
-    removeAll(visible, /<[^>]+>|<(?=[a-zA-Z!/?])/g)
-      // One pass, so "&amp;lt;" reads as the text "&lt;" and is not decoded twice.
-      .replace(/&(?:nbsp|amp|lt|gt|quot|apos|#39);/g, (entity) => ENTITIES[entity])
-      .replace(/\n{3,}/g, "\n\n")
-      .trim()
-  );
+  return removeAll(visible, /<[^>]+>|<(?=[a-zA-Z!/?])/g)
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+export function stripHtml(html: string): string {
+  // One pass, so "&amp;lt;" reads as the text "&lt;" and is not decoded twice.
+  return stripTags(html)
+    .replace(/&(?:nbsp|amp|lt|gt|quot|apos|#39);/g, (entity) => ENTITIES[entity])
+    .trim();
 }
 
 export function inferWorkMode(title: string, description: string, remoteFlag?: boolean): WorkMode {

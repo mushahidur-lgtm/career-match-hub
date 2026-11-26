@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { requireSignedIn } from "@/lib/cloud/auth";
 import { checkJob } from "@/lib/jobs/check";
 import { badRequest, rateLimit } from "@/lib/rate-limit";
 
@@ -25,6 +26,10 @@ const RequestSchema = z.object({
 export async function POST(req: Request) {
   const limited = rateLimit(req, "job-check", 15);
   if (limited) return limited;
+
+  // This route can spend job-source quota and make the server read pages, so a site with sign-in requires it.
+  const auth = await requireSignedIn(req);
+  if (!auth.ok) return badRequest(auth.error, auth.status);
 
   let parsed;
   try {

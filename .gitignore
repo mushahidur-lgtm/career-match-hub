@@ -48,3 +48,4 @@ next-env.d.ts
 
 # Benchmark runs on your own backup: contains resume details
 /benchmark-output/
+career-match-hub-backup-*.json

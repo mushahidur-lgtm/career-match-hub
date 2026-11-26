@@ -125,7 +125,20 @@ you want page reads. Roll back from Vercel's deployment list.
 * A posting check re-scores with rules only; an earlier Claude adjustment is dropped.
 * The morning run does not check postings.
 
-## 11. Next
+## 11. Validation output (final code)
+
+```
+vitest run            Test Files  40 passed (40)   Tests  811 passed | 1 skipped (812)   (the skipped one needs --backup)
+tsc --noEmit          exit 0
+eslint                exit 0
+next build            Compiled successfully
+                      static: / and /_not-found
+                      dynamic: /api/analyze-resume, cron/daily, find-recruiter, interview-prep, job-assessment,
+                      job-check, job-insights, networking-draft, parse-resume, search-jobs, status
+playwright test       7 passed
+```
+
+## 12. Next
 
 1. Run the benchmark on your profile and label 20 real postings you have judged yourself.
 2. Decide whether location and seniority conflicts should read as "not recommended".

@@ -5,6 +5,26 @@ import { safeFetch, type Transport } from "./safe-fetch";
 
 const AGENT = "careermatchhub";
 
+/**
+ * "*" matches anything and a final "$" anchors the end. Matched piece by piece rather than with a regular
+ * expression, because the rule comes from a remote file and could be written to make one backtrack for ever.
+ */
+function pathMatches(rule: string, path: string): boolean {
+  const anchored = rule.endsWith("$");
+  const parts = (anchored ? rule.slice(0, -1) : rule).split("*");
+  if (!path.startsWith(parts[0])) return false;
+  let at = parts[0].length;
+  if (parts.length === 1) return !anchored || at === path.length;
+  const last = parts[parts.length - 1];
+  for (const part of parts.slice(1, -1)) {
+    const found = path.indexOf(part, at);
+    if (found < 0) return false;
+    at = found + part.length;
+  }
+  if (anchored) return path.length - last.length >= at && path.endsWith(last);
+  return path.indexOf(last, at) >= 0;
+}
+
 export function robotsAllows(text: string, path: string): boolean {
   const groups: { agents: string[]; rules: { allow: boolean; path: string }[] }[] = [];
   let open = false;
@@ -23,10 +43,7 @@ export function robotsAllows(text: string, path: string): boolean {
   }
   const mine = groups.filter((g) => g.agents.some((a) => a !== "*" && AGENT.startsWith(a)));
   const rules = (mine.length ? mine : groups.filter((g) => g.agents.includes("*"))).flatMap((g) => g.rules);
-  const matches = (rule: string) => {
-    const pattern = rule.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*+/g, ".*").replace(/\\\$$/, "$");
-    return new RegExp(`^${pattern}`).test(path);
-  };
+  const matches = (rule: string) => pathMatches(rule, path);
   // The most specific rule wins; Allow wins a tie.
   const best = rules.filter((r) => matches(r.path)).sort((a, b) => b.path.length - a.path.length || Number(b.allow) - Number(a.allow))[0];
   return best ? best.allow : true;
