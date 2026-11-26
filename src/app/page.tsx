@@ -87,7 +87,7 @@ const check =
 const scoreKeyOf = (v: ResumeVersion | null, prefs: SearchPreferences) => {
   if (!v) return "";
   const p = v.profile;
-  return JSON.stringify([v.id, v.text.length, p.seniority, p.yearsOfExperience, ...profileSkills(p.skills).sort(), prefs.locations, prefs.minSalary, prefs.primaryRoles, prefs.secondaryRoles, prefs.weights ?? null, prefs.facts ?? null]);
+  return JSON.stringify([v.id, v.text.length, p.seniority, p.yearsOfExperience, ...profileSkills(p.skills).sort(), prefs.locations, prefs.minSalary, prefs.primaryRoles, prefs.secondaryRoles, prefs.weights ?? null, prefs.facts ?? null, prefs.transitionRoles ?? null, prefs.excludedRoles ?? null, p.education ?? null, p.certifications ?? null, p.certificationDetails ?? null]);
 };
 
 export default function Home() {

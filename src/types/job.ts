@@ -37,6 +37,16 @@ export interface EducationEntry {
   credential: string;
   institution: string;
   year: string | null;
+  /** Field of study, when it is not part of the credential. */
+  field?: string;
+}
+
+/** Extra facts about a certificate. `certifications` stays the list of names. */
+export interface CertificationDetail {
+  name: string;
+  issuer?: string;
+  /** "YYYY", "YYYY-MM" or "YYYY-MM-DD". */
+  expires?: string;
 }
 
 export interface CandidateProfile {
@@ -52,6 +62,7 @@ export interface CandidateProfile {
   workHistory?: WorkEntry[];
   education?: EducationEntry[];
   certifications?: string[];
+  certificationDetails?: CertificationDetail[];
 }
 
 /** One saved version of the resume with the profile read from it. Matching uses the active one. */
@@ -154,6 +165,9 @@ export interface EvidenceRef {
   quote: string;
 }
 
+export const ROLE_RELATIONS = ["direct", "adjacent", "transition", "unrelated"] as const;
+export type RoleRelation = (typeof ROLE_RELATIONS)[number];
+
 export type RequirementImportance = "required" | "preferred" | "optional";
 
 /** One skill the posting asks for and what the resume shows for it. */
@@ -187,14 +201,20 @@ export interface CandidateFacts {
   clearance?: ClearanceLevel | null;
   /** Words that rule a posting out of your career direction (for example "sales" or "commission"). */
   exclusions?: string[];
+  /** You state that the education and certificates entered are everything you hold. */
+  qualificationsComplete?: boolean;
 }
 
 export type EligibilityStatus = "eligible" | "not_eligible" | "needs_verification" | "not_applicable";
-export type EligibilityGate = "citizenship" | "work_authorization" | "sponsorship" | "clearance" | "language";
+export type EligibilityGate = "citizenship" | "work_authorization" | "sponsorship" | "clearance" | "language" | "education" | "certification";
+/** A single condition can also be a preference you do not meet, which never rules a job out. */
+export type CheckStatus = EligibilityStatus | "preferred_missing";
 
 export interface EligibilityCheck {
   gate: EligibilityGate;
-  status: EligibilityStatus;
+  status: CheckStatus;
+  /** Worth checking, but too weakly worded to move the job down the ranking. */
+  advisory?: boolean;
   /** The posting's own words. */
   postingEvidence: string;
   /** What the candidate stated, or null when they have not said. */
@@ -307,7 +327,7 @@ export interface MatchDetail {
   skillEvidence?: SkillMatchItem[];
   strengths?: EvidencedPoint[];
   gaps?: EvidencedPoint[];
-  careerAlignment?: { score: number | null; note: string; role: string | null };
+  careerAlignment?: { score: number | null; note: string; role: string | null; relation?: RoleRelation | null };
   /** The lowest cap that applied, so a later AI adjustment is held to it. Null when no cap applied. */
   capLimit?: number | null;
   /** Warnings about the analysis itself: low extraction confidence, thin posting, suspicious posting text. */
@@ -387,6 +407,10 @@ export interface SearchPreferences {
   weights?: Partial<MatchWeights>;
   /** Work authorization, languages, clearance and exclusions, as you state them. */
   facts?: CandidateFacts;
+  /** Roles you are willing to move into. */
+  transitionRoles?: string[];
+  /** Roles you do not want. */
+  excludedRoles?: string[];
 }
 
 export const DEFAULT_PREFERENCES: SearchPreferences = {

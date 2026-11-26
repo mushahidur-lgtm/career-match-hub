@@ -1,5 +1,6 @@
 import type { CandidateFacts, ClearanceLevel, EligibilityCheck, EligibilityResult, EligibilityStatus, LanguageLevel } from "@/types/job";
 import { detectEligibility, type Statement } from "./detect";
+import { checkQualifications, type Qualifications } from "./qualifications";
 
 /**
  * Gates run before a job is recommended. A job fails only when the posting states a condition AND the
@@ -65,12 +66,24 @@ function check(s: Statement, facts: CandidateFacts): EligibilityCheck {
   }
 }
 
-export function checkEligibility(title: string, description: string, facts: CandidateFacts = {}): EligibilityResult {
-  const checks = detectEligibility(`${title}\n${description}`).map((s) => check(s, facts));
-  const failed = checks.filter((c) => c.status === "not_eligible");
-  const unknown = checks.filter((c) => c.status === "needs_verification");
+export function checkEligibility(
+  title: string,
+  description: string,
+  facts: CandidateFacts = {},
+  qualifications?: Omit<Qualifications, "complete">,
+  now = new Date(),
+): EligibilityResult {
+  const checks = [
+    ...detectEligibility(`${title}\n${description}`).map((s) => check(s, facts)),
+    ...(qualifications ? checkQualifications(description, { ...qualifications, complete: facts.qualificationsComplete === true }, now) : []),
+  ];
+  // Advisory and preference checks are shown, but never decide the job's standing.
+  const deciding = checks.filter((c) => !c.advisory && c.status !== "preferred_missing");
+  const failed = deciding.filter((c) => c.status === "not_eligible");
+  const unknown = deciding.filter((c) => c.status === "needs_verification");
   if (failed.length) return { status: "not_eligible", checks, reason: failed.map((c) => c.note).join(" ") };
   if (unknown.length) return { status: "needs_verification", checks, reason: unknown.map((c) => c.note).join(" ") };
-  if (checks.length) return { status: "eligible", checks, reason: "You meet the conditions the posting states." };
+  if (deciding.length) return { status: "eligible", checks, reason: "You meet the conditions the posting states." };
+  if (checks.length) return { status: "not_applicable", checks, reason: "Nothing the posting requires outright rules you in or out. See the notes." };
   return { status: "not_applicable", checks, reason: "No eligibility condition could be read in the posting. That is not confirmation that none applies." };
 }

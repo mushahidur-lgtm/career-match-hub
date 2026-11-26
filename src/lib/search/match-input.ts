@@ -10,9 +10,12 @@ export function toMatchInput(profile: CandidateProfile, resumeText: string | nul
       ? {
           locations: preferences.locations,
           minSalary: preferences.minSalary,
-          roles: [...preferences.primaryRoles, ...preferences.secondaryRoles],
+          // Roles you are willing to move into are roles you are aiming for.
+          roles: [...preferences.primaryRoles, ...preferences.secondaryRoles, ...(preferences.transitionRoles ?? [])],
           primaryRoles: preferences.primaryRoles,
           secondaryRoles: preferences.secondaryRoles,
+          transitionRoles: preferences.transitionRoles,
+          excludedRoles: preferences.excludedRoles,
         }
       : undefined,
     weights: preferences?.weights,

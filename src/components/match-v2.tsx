@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { EligibilityStatus, EvidencedPoint, Job, MatchResult, PostingStatus, RecommendedAction } from "@/types/job";
+import type { CheckStatus, EvidencedPoint, Job, MatchResult, PostingStatus, RecommendedAction } from "@/types/job";
 import { useFeedback } from "./feedback-context";
 import { Badge, inputClass, secondaryButton } from "./ui";
 
@@ -14,7 +14,8 @@ export const ACTION_LABEL: Record<RecommendedAction, [string, Tone]> = {
   not_recommended: ["Not recommended", "neutral"],
   verify_requirements: ["Verify requirements", "warn"],
 };
-export const ELIGIBILITY_LABEL: Record<EligibilityStatus, [string, Tone]> = {
+export const ELIGIBILITY_LABEL: Record<CheckStatus, [string, Tone]> = {
+  preferred_missing: ["Preferred qualification missing", "neutral"],
   eligible: ["Eligible", "good"],
   not_eligible: ["Not eligible", "warn"],
   needs_verification: ["Check eligibility", "warn"],

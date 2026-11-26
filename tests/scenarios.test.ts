@@ -203,7 +203,7 @@ describe("evidence levels", () => {
   });
   it("builds a candidate profile with facts only as stated", () => {
     const c = buildCandidateIntelligence(CANDIDATE, CANDIDATE_RESUME, CANDIDATE_PREFS);
-    expect(c.facts).toEqual({ workAuthorization: null, languages: [], clearance: null, exclusions: [] });
+    expect(c.facts).toEqual({ workAuthorization: null, languages: [], clearance: null, exclusions: [], qualificationsComplete: false });
     expect(c.leadership.map((l) => l.quote).join(" ")).toMatch(/Led a team/);
     expect(c.domains).toContain("insurance");
   });

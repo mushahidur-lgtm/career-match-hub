@@ -20,6 +20,7 @@ import {
   LANGUAGE_LEVELS,
   POSTING_STATUSES,
   RECOMMENDED_ACTIONS,
+  ROLE_RELATIONS,
   RESUME_SECTIONS,
   WORK_AUTHORIZATIONS,
 } from "@/types/job";
@@ -51,6 +52,13 @@ export const EducationSchema = z.object({
   credential: str(200),
   institution: str(200),
   year: str(10).nullable(),
+  field: str(120).optional(),
+});
+
+export const CertificationDetailSchema = z.object({
+  name: str(200),
+  issuer: str(120).optional(),
+  expires: str(10).optional(),
 });
 
 export const ProfileSchema = z.object({
@@ -65,6 +73,7 @@ export const ProfileSchema = z.object({
   workHistory: z.array(WorkEntrySchema).max(60).optional(),
   education: z.array(EducationSchema).max(30).optional(),
   certifications: z.array(str(200)).max(60).optional(),
+  certificationDetails: z.array(CertificationDetailSchema).max(60).optional(),
 });
 
 export const ResumeSchema = z.object({
@@ -108,6 +117,7 @@ export const FactsSchema = z.object({
   languages: z.array(z.object({ language: str(40), level: z.enum(LANGUAGE_LEVELS) })).max(20).optional(),
   clearance: z.enum(CLEARANCE_LEVELS).nullable().optional(),
   exclusions: z.array(str(60)).max(30).optional(),
+  qualificationsComplete: z.boolean().optional(),
 });
 
 export const PreferencesSchema = z.object({
@@ -117,6 +127,8 @@ export const PreferencesSchema = z.object({
   secondaryRoles: strList(60),
   weights: WeightsSchema.optional(),
   facts: FactsSchema.optional(),
+  transitionRoles: strList(60).optional(),
+  excludedRoles: strList(60).optional(),
 });
 
 const noteList = z.array(str(400)).max(40);
@@ -127,8 +139,9 @@ export const EligibilitySchema = z.object({
   checks: z
     .array(
       z.object({
-        gate: z.enum(["citizenship", "work_authorization", "sponsorship", "clearance", "language"]),
-        status: z.enum(["eligible", "not_eligible", "needs_verification", "not_applicable"]),
+        gate: z.enum(["citizenship", "work_authorization", "sponsorship", "clearance", "language", "education", "certification"]),
+        status: z.enum(["eligible", "not_eligible", "needs_verification", "not_applicable", "preferred_missing"]),
+        advisory: z.boolean().optional(),
         postingEvidence: str(400),
         candidateEvidence: str(400).nullable(),
         note: str(400),
@@ -194,7 +207,7 @@ export const MatchDetailSchema = z.object({
     .optional(),
   strengths: z.array(PointSchema).max(20).optional(),
   gaps: z.array(PointSchema).max(30).optional(),
-  careerAlignment: z.object({ score: z.number().nullable(), note: str(600), role: str(200).nullable() }).optional(),
+  careerAlignment: z.object({ score: z.number().nullable(), note: str(600), role: str(200).nullable(), relation: z.enum(ROLE_RELATIONS).nullable().optional() }).optional(),
   capLimit: z.number().nullable().optional(),
   flags: noteList.optional(),
 });
