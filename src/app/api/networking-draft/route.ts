@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { callStructured, describeAiError, isAiConfigured } from "@/lib/anthropic";
-import { requireSignedIn } from "@/lib/cloud/auth";
+import { guard } from "@/lib/cloud/guard";
 import { CONNECTION_NOTE_LIMIT, DRAFT_LABELS, YOUR_NAME, draftIsSafe, sharedSkills, type DraftKind } from "@/lib/contacts/drafts";
-import { badRequest, rateLimit } from "@/lib/rate-limit";
+import { logFailure } from "@/lib/log";
+import { badRequest } from "@/lib/rate-limit";
+import { readJson } from "@/lib/request";
 import { ProfileSchema } from "@/lib/schemas";
 import type { Contact } from "@/types/contacts";
 
@@ -41,12 +43,12 @@ const SYSTEM = `You write a short message from a job seeker to a recruiter or hi
 - A LinkedIn connection request must be under ${CONNECTION_NOTE_LIMIT} characters and have no subject. An email needs a short subject.`;
 
 export async function POST(req: Request) {
-  const limited = rateLimit(req, "networking-draft", 10);
-  if (limited) return limited;
-  const auth = await requireSignedIn(req);
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const refused = await guard(req, "networking-draft", 10);
+  if (refused) return refused;
 
-  const parsed = Body.safeParse(await req.json().catch(() => null));
+  const input = await readJson(req, 800_000);
+  if (!input.ok && input.tooLarge) return badRequest("The request is too large.", 413);
+  const parsed = Body.safeParse(input.ok ? input.value : null);
   if (!parsed.success) return badRequest("The request was not valid.");
   if (!isAiConfigured()) return NextResponse.json({ draft: null, note: "AI drafting needs an Anthropic API key. The built-in draft is still available." });
   const { kind, contact, job, profile, resumeText, appliedAt } = parsed.data;
@@ -84,7 +86,7 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ draft: { kind, subject: kind === "email" ? (data.subject ?? "").trim() || `${job.title} at ${job.company}` : null, body, ai: true } });
   } catch (err) {
-    console.error("networking-draft failed:", err instanceof Error ? err.message : err);
+    logFailure("networking-draft", err);
     return NextResponse.json({ draft: null, note: `${describeAiError(err)} The built-in draft is shown instead.` });
   }
 }

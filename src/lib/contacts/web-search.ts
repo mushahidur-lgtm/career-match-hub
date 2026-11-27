@@ -1,7 +1,8 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import type { ContentBlock, MessageParam } from "@anthropic-ai/sdk/resources/messages/messages";
-import { getSearchClient, withModelFallback } from "@/lib/anthropic";
+import { isAiConfigured, getSearchClient, withModelFallback } from "@/lib/anthropic";
+import { logFailure } from "@/lib/log";
 import { buildQueryPlan, inferDepartments } from "./departments";
 import type { Citation, FetchedPage, RawCandidate, SearchResultInfo, WebEvidence } from "./verify";
 
@@ -38,12 +39,11 @@ export const MAX_PAGE_TOKENS = 6000;
 export const BLOCKED_FETCH_DOMAINS = ["linkedin.com", "www.linkedin.com", "ca.linkedin.com", "facebook.com", "www.facebook.com", "instagram.com", "www.instagram.com", "x.com", "twitter.com"];
 
 /**
- * Web lookups bill Anthropic per search, and a public site has no sign-in unless cloud sync is configured. So they stay off
- * until the owner turns them on with RECRUITER_WEB_SEARCH=1, or sign-in is enforced (the database is configured), which
- * also limits who can run them. Adding an Anthropic key for resume analysis must not quietly open paid searches to everyone.
+ * Web lookups bill Anthropic per search, so they need two switches besides the key: paid AI turned on (AI_ENABLED=1) and
+ * this feature turned on (RECRUITER_WEB_SEARCH=1). The route also requires the signed-in owner.
  */
-export function webSearchEnabled(signInEnforced: boolean): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY?.trim()) && (process.env.RECRUITER_WEB_SEARCH === "1" || signInEnforced);
+export function webSearchEnabled(): boolean {
+  return isAiConfigured() && process.env.RECRUITER_WEB_SEARCH === "1";
 }
 
 const SYSTEM = `You help a job seeker find the people who are publicly named as responsible for hiring for ONE job. Use web search, and read public pages with web fetch.
@@ -280,7 +280,7 @@ export async function searchWeb(input: FindInput, onProgress?: (message: string)
       return { ok: true, model: "unknown", usage, parsed: { ...parseResponse(collected), stoppedEarly: true } };
     }
     if (abort.signal.aborted) return { ok: false, message: "The search was stopped before it found anything." };
-    console.error("find-recruiter search failed:", err instanceof Error ? err.message : err);
+    logFailure("find-recruiter search", err);
     return { ok: false, message: describeSearchError(err) };
   } finally {
     clearTimeout(timer);

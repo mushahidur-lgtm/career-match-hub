@@ -2,6 +2,9 @@
 
 import { useState, type DragEvent, type FormEvent } from "react";
 import { Check, FileText, Pencil, Plus, RotateCw, Search, Sparkles, Trash2, Upload, X } from "lucide-react";
+import { apiFetch } from "@/lib/api-fetch";
+import { heuristicProfile } from "@/lib/heuristics";
+import { readResumeFile } from "@/lib/resume-file";
 import { yearsFromHistory } from "@/lib/resume-sections";
 import { dedupe } from "@/lib/skills";
 import {
@@ -12,7 +15,6 @@ import {
   type ApiError,
   type CandidateProfile,
   type EducationEntry,
-  type ParseResumeResponse,
   type ResumeVersion,
   type Seniority,
   type SkillCategory,
@@ -21,6 +23,7 @@ import {
 import { Badge, Notice, Spinner, inputClass, primaryButton, secondaryButton } from "./ui";
 
 const MAX_BYTES = 4 * 1024 * 1024;
+const MAX_RESUME_CHARS = 60_000;
 export const MAX_RESUME_VERSIONS = 20;
 
 interface Props {
@@ -34,6 +37,8 @@ interface Props {
   /** Replaces the profile of a version with a fresh reading of its resume text. */
   onReread: (id: string, profile: CandidateProfile) => void;
   onPickRole: (role: string) => void;
+  /** True when the server has Claude switched on and this person may use it. */
+  useAi: boolean;
 }
 
 async function readError(res: Response, fallback: string): Promise<string> {
@@ -44,8 +49,10 @@ async function readError(res: Response, fallback: string): Promise<string> {
   }
 }
 
-async function analyzeText(text: string): Promise<AnalyzeResumeResponse> {
-  const res = await fetch("/api/analyze-resume", {
+/** The resume is sent to the server only when Claude is switched on there. Otherwise it is read here, in the browser. */
+async function analyzeText(text: string, useAi: boolean): Promise<AnalyzeResumeResponse> {
+  if (!useAi) return { profile: heuristicProfile(text.slice(0, MAX_RESUME_CHARS)), warning: null };
+  const res = await apiFetch("/api/analyze-resume", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
@@ -75,7 +82,7 @@ export function ResumeManager(props: Props) {
         {versions.length > 0 && <VersionList {...props} />}
 
         {showAdd ? (
-          <AddResume
+          <AddResume useAi={props.useAi}
             disabled={versions.length >= MAX_RESUME_VERSIONS}
             onDone={(text, fileName, profile) => {
               props.onAdd(text, fileName, profile);
@@ -93,7 +100,7 @@ export function ResumeManager(props: Props) {
 
       <section aria-labelledby="profile-heading" className="min-w-0">
         {active ? (
-          <ProfilePanel key={active.id} version={active} onChange={props.onProfileChange} onPickRole={props.onPickRole} onReread={props.onReread} />
+          <ProfilePanel key={active.id} version={active} onChange={props.onProfileChange} onPickRole={props.onPickRole} onReread={props.onReread} useAi={props.useAi} />
         ) : (
           <div className="flex h-full min-h-56 flex-col justify-center rounded-xl border border-dashed border-line px-6 py-10">
             <h2 id="profile-heading" className="font-display text-xl font-semibold">
@@ -192,7 +199,7 @@ function VersionList({ versions, active, onSelect, onRename, onDelete }: Props) 
 
 /* ---------- adding a resume ---------- */
 
-function AddResume({ disabled, onDone, onCancel }: { disabled: boolean; onDone: (text: string, fileName: string | null, profile: CandidateProfile) => void; onCancel?: () => void }) {
+function AddResume({ disabled, onDone, onCancel, useAi }: { useAi: boolean; disabled: boolean; onDone: (text: string, fileName: string | null, profile: CandidateProfile) => void; onCancel?: () => void }) {
   const [mode, setMode] = useState<"upload" | "paste">("upload");
   const [pasted, setPasted] = useState("");
   const [busy, setBusy] = useState<null | "reading" | "analyzing">(null);
@@ -203,7 +210,7 @@ function AddResume({ disabled, onDone, onCancel }: { disabled: boolean; onDone: 
   async function analyze(text: string, fileName: string | null, carried: string | null) {
     setBusy("analyzing");
     try {
-      const data = await analyzeText(text);
+      const data = await analyzeText(text, useAi);
       const note = [carried, data.warning].filter(Boolean).join(" ") || null;
       setWarning(note);
       onDone(text, fileName, data.profile);
@@ -220,11 +227,7 @@ function AddResume({ disabled, onDone, onCancel }: { disabled: boolean; onDone: 
     if (file.size > MAX_BYTES) return setError("That file is over 4 MB. Export a smaller copy or paste the text instead.");
     setBusy("reading");
     try {
-      const body = new FormData();
-      body.append("file", file);
-      const res = await fetch("/api/parse-resume", { method: "POST", body });
-      if (!res.ok) throw new Error(await readError(res, "The file could not be read."));
-      const data = (await res.json()) as ParseResumeResponse;
+      const data = await readResumeFile(file);
       await analyze(data.text, data.fileName, data.warning);
     } catch (err) {
       setError(err instanceof Error ? err.message : "The file could not be read.");
@@ -331,7 +334,9 @@ function ProfilePanel({
   onChange,
   onPickRole,
   onReread,
+  useAi,
 }: {
+  useAi: boolean;
   version: ResumeVersion;
   onChange: (p: CandidateProfile) => void;
   onPickRole: (role: string) => void;
@@ -352,7 +357,7 @@ function ProfilePanel({
     setRereading(true);
     setError(null);
     try {
-      const data = await analyzeText(version.text);
+      const data = await analyzeText(version.text, useAi);
       onReread(version.id, data.profile);
       setConfirmReread(false);
     } catch (err) {

@@ -6,4 +6,7 @@
 export const CLOUD_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 export const CLOUD_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
-export const isCloudConfigured = (): boolean => /^https:\/\/.+/.test(CLOUD_URL) && CLOUD_ANON_KEY.length > 20;
+/** https, or plain http only for a database running on this machine. Used by the browser and the server alike. */
+export const isDatabaseUrl = (url: string): boolean => /^(https:\/\/.+|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?)$/.test(url);
+
+export const isCloudConfigured = (): boolean => isDatabaseUrl(CLOUD_URL) && CLOUD_ANON_KEY.length > 20;

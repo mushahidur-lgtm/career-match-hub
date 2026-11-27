@@ -31,6 +31,7 @@ import { SearchHistory } from "@/components/SearchHistory";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { StatusBanner } from "@/components/StatusBanner";
 import { Notice, inputClass, secondaryButton } from "@/components/ui";
+import { apiFetch } from "@/lib/api-fetch";
 import { jobKey, mergeResumes, mergeSavedJobs, type AppData } from "@/lib/backup";
 import { computeReminders } from "@/lib/applications";
 import { useCloud } from "@/lib/cloud/use-cloud";
@@ -157,22 +158,13 @@ export default function Home() {
   const recovered = resumesLost || savedLost || skipped > 0 || intelSkipped > 0 || intelLost || contactsSkipped > 0 || contactsLost || watchSkipped > 0 || watchLost;
 
   const [status, setStatus] = useState<AppStatus | null>(null);
+  /** Why private features are unavailable, when the server says so. */
+  const [locked, setLocked] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [detailJob, setDetailJob] = useState<Job | null>(null);
   const [openApp, setOpenApp] = useState<{ id: string; tab: ApplicationTab } | null>(null);
   const [adding, setAdding] = useState(false);
-
-  useEffect(() => {
-    let live = true;
-    fetch("/api/status")
-      .then((r) => (r.ok ? (r.json() as Promise<AppStatus>) : null))
-      .then((s) => live && setStatus(s))
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, []);
 
   // Profiles saved before work history existed get it read from their stored resume text. Nothing else changes.
   useEffect(() => {
@@ -221,7 +213,7 @@ export default function Home() {
       setLoading(true);
       setSearchError(null);
       try {
-        const res = await fetch("/api/search-jobs", {
+        const res = await apiFetch("/api/search-jobs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ filters: f, profile: active?.profile ?? null, resumeText: active?.text ?? null, preferences }),
@@ -322,6 +314,24 @@ export default function Home() {
     if (d.feedback) setFeedback(d.feedback);
   };
   const cloud = useCloud({ data: syncData, apply: applyCloud, updateIntel: setIntel, intel });
+
+  // Asked again after signing in or out: only the owner is told what is connected.
+  const signedInAs = cloud.user?.id ?? null;
+  useEffect(() => {
+    if (!cloud.ready) return;
+    let live = true;
+    apiFetch("/api/status")
+      .then(async (r) => {
+        const body = (await r.json().catch(() => null)) as (AppStatus & Partial<ApiError>) | null;
+        if (!live) return;
+        setStatus(r.ok ? body : null);
+        setLocked(r.ok ? null : cloud.configured ? (body?.error ?? "Sign in to use this site.") : "This site has no sign-in set up, so searching is off.");
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [cloud.ready, cloud.configured, signedInAs]);
 
   /* ----- recruiter and HR contacts ----- */
   const contactsRef = useRef(contacts);
@@ -433,7 +443,7 @@ export default function Home() {
     <FeedbackContext.Provider value={record}>
     <ContactsContext.Provider value={contactsApi}>
     <DetailContext.Provider value={detailContext}>
-    <AppShell tab={tab} onTab={setTab} counts={{ applications: saved.length, interviews: saved.reduce((n, a) => n + (a.interviews ?? []).filter((i) => i.status === "Scheduled").length, 0) }} status={<StatusBanner status={status} results={results} />}>
+    <AppShell tab={tab} onTab={setTab} counts={{ applications: saved.length, interviews: saved.reduce((n, a) => n + (a.interviews ?? []).filter((i) => i.status === "Scheduled").length, 0) }} status={<StatusBanner status={status} results={results} locked={locked} />}>
       {unsaved.length > 0 && (
         <Notice tone="error">
           Your browser has no room left, so recent changes are <strong>not being saved</strong> and would be lost if you closed this page. Export a backup now, then free space by deleting upgrade copies in Settings or old search history.{" "}
@@ -477,6 +487,7 @@ export default function Home() {
             onProfileChange={editProfile}
             onReread={rereadProfile}
             onPickRole={pickRole}
+            useAi={status?.ai ?? false}
           />
         ) : tab === "discover" ? (
           <div className="space-y-5">

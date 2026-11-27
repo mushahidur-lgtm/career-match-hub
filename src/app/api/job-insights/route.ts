@@ -4,7 +4,10 @@ import { callStructured, describeAiError, isAiConfigured } from "@/lib/anthropic
 import { profileSkills } from "@/lib/heuristics";
 import { verifyInsights, type JobInsights } from "@/lib/insights";
 import { parseRequirements } from "@/lib/matching/requirements";
-import { badRequest, rateLimit } from "@/lib/rate-limit";
+import { guard } from "@/lib/cloud/guard";
+import { logFailure } from "@/lib/log";
+import { badRequest } from "@/lib/rate-limit";
+import { readJson } from "@/lib/request";
 import { MatchSchema, ProfileSchema } from "@/lib/schemas";
 import { WORK_MODES } from "@/types/job";
 
@@ -61,16 +64,13 @@ Hard rules:
 - Write plainly. No hype.`;
 
 export async function POST(req: Request) {
-  const limited = rateLimit(req, "job-insights", 10);
-  if (limited) return limited;
+  const refused = await guard(req, "job-insights", 10);
+  if (refused) return refused;
   if (!isAiConfigured()) return badRequest("Claude is not connected, so tailored suggestions are unavailable.", 503);
 
-  let parsed;
-  try {
-    parsed = RequestSchema.safeParse(await req.json());
-  } catch {
-    return badRequest("Send JSON with a job, resumeText and profile.");
-  }
+  const body = await readJson(req, 600_000);
+  if (!body.ok) return body.tooLarge ? badRequest("The request is too large.", 413) : badRequest("Send JSON with a job, resumeText and profile.");
+  const parsed = RequestSchema.safeParse(body.value);
   if (!parsed.success) return badRequest("The job or resume details were not valid.");
   const { job, resumeText, profile } = parsed.data;
   if (resumeText.trim().length < 50) return badRequest("Add your resume text first.");
@@ -92,7 +92,7 @@ export async function POST(req: Request) {
     const insights: JobInsights = verifyInsights(data, resumeText);
     return NextResponse.json({ insights });
   } catch (err) {
-    console.error("job-insights failed:", err instanceof Error ? err.message : err);
+    logFailure("job-insights", err);
     return badRequest(describeAiError(err), 502);
   }
 }

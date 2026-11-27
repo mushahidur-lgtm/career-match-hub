@@ -4,7 +4,10 @@ import { callStructured, describeAiError, isAiConfigured } from "@/lib/anthropic
 import { profileSkills } from "@/lib/heuristics";
 import { verifyPrep } from "@/lib/interview-prep";
 import { parseRequirements } from "@/lib/matching/requirements";
-import { badRequest, rateLimit } from "@/lib/rate-limit";
+import { guard } from "@/lib/cloud/guard";
+import { logFailure } from "@/lib/log";
+import { badRequest } from "@/lib/rate-limit";
+import { readJson } from "@/lib/request";
 import { ProfileSchema } from "@/lib/schemas";
 import { INTERVIEW_FORMATS, INTERVIEW_STAGES, WORK_MODES } from "@/types/job";
 
@@ -55,16 +58,13 @@ Rules:
 - Write plainly. No hype.`;
 
 export async function POST(req: Request) {
-  const limited = rateLimit(req, "interview-prep", 10);
-  if (limited) return limited;
+  const refused = await guard(req, "interview-prep", 10);
+  if (refused) return refused;
   if (!isAiConfigured()) return badRequest("Claude is not connected, so tailored practice questions are unavailable.", 503);
 
-  let parsed;
-  try {
-    parsed = RequestSchema.safeParse(await req.json());
-  } catch {
-    return badRequest("Send JSON with a job, resumeText, profile, stage and format.");
-  }
+  const body = await readJson(req, 600_000);
+  if (!body.ok) return body.tooLarge ? badRequest("The request is too large.", 413) : badRequest("Send JSON with a job, resumeText, profile, stage and format.");
+  const parsed = RequestSchema.safeParse(body.value);
   if (!parsed.success) return badRequest("The interview details were not valid.");
   const { job, resumeText, profile, stage, format } = parsed.data;
   if (resumeText.trim().length < 50) return badRequest("Add your resume text first.");
@@ -81,7 +81,7 @@ export async function POST(req: Request) {
     const { data } = await callStructured({ schema: PrepSchema, system: SYSTEM, user, maxTokens: 16000 });
     return NextResponse.json({ prep: verifyPrep(data, resumeText) });
   } catch (err) {
-    console.error("interview-prep failed:", err instanceof Error ? err.message : err);
+    logFailure("interview-prep", err);
     return badRequest(describeAiError(err), 502);
   }
 }

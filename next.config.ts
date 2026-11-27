@@ -1,8 +1,14 @@
 import type { NextConfig } from "next";
+import { securityHeaders } from "./src/lib/security-headers";
 
 const nextConfig: NextConfig = {
-  // These load native or worker files at runtime, so they must not be bundled.
-  serverExternalPackages: ["pdf-parse", "pdfjs-dist", "@napi-rs/canvas", "mammoth"],
+  poweredByHeader: false,
+  async headers() {
+    return [
+      { source: "/:path*", headers: securityHeaders(process.env.NODE_ENV === "development", process.env.NEXT_PUBLIC_SUPABASE_URL) },
+      { source: "/api/:path*", headers: [{ key: "Cache-Control", value: "no-store" }] },
+    ];
+  },
   turbopack: {
     rules: {
       "*.css": {

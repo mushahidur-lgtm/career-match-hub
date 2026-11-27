@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ExternalLink, Quote, Sparkles, X } from "lucide-react";
+import { apiFetch } from "@/lib/api-fetch";
 import { isBeforeApplied } from "@/lib/applications";
 import { formatSalary } from "@/lib/format";
 import type { JobInsights } from "@/lib/insights";
@@ -61,7 +62,7 @@ function useInsights(job: Job, resume: ResumeVersion | null) {
     if (!resume || !key) return;
     setState((s) => ({ ...s, status: "loading", error: null }));
     try {
-      const res = await fetch("/api/job-insights", {
+      const res = await apiFetch("/api/job-insights", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

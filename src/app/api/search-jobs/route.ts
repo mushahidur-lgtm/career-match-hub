@@ -5,7 +5,9 @@ import { isAiConfigured } from "@/lib/anthropic";
 import { scoreJob } from "@/lib/matching/engine";
 import { applyFilters } from "@/lib/providers/common";
 import { fetchJobs } from "@/lib/providers";
-import { badRequest, rateLimit } from "@/lib/rate-limit";
+import { guard } from "@/lib/cloud/guard";
+import { badRequest } from "@/lib/rate-limit";
+import { readJson } from "@/lib/request";
 import { PreferencesSchema, ProfileSchema } from "@/lib/schemas";
 import { toMatchInput } from "@/lib/search/match-input";
 import { compareByFit, splitRanked } from "@/lib/search/rank";
@@ -41,15 +43,12 @@ const RequestSchema = z.object({
 });
 
 export async function POST(req: Request) {
-  const limited = rateLimit(req, "search-jobs", 12);
-  if (limited) return limited;
+  const refused = await guard(req, "search-jobs", 12);
+  if (refused) return refused;
 
-  let parsed;
-  try {
-    parsed = RequestSchema.safeParse(await req.json());
-  } catch {
-    return badRequest("Send JSON with filters and profile.");
-  }
+  const request = await readJson(req, 600_000);
+  if (!request.ok) return request.tooLarge ? badRequest("The request is too large.", 413) : badRequest("Send JSON with filters and profile.");
+  const parsed = RequestSchema.safeParse(request.value);
   if (!parsed.success) return badRequest("The search filters were not valid.");
   const { filters, profile, resumeText, preferences } = parsed.data;
 

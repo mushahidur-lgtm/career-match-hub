@@ -30,6 +30,30 @@ test.afterEach(() => {
 });
 
 const today = () => new Date().toISOString();
+
+const RESUME = "Senior Data Engineer with 9 years of experience. Built ETL pipelines in Python and SQL on Azure Data Factory.";
+
+/** A one-page PDF holding that line. */
+function resumePdf(): Buffer {
+  const content = `BT /F1 10 Tf 20 700 Td (${RESUME}) Tj ET`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  let out = "%PDF-1.4\n";
+  const offsets = objects.map((body, i) => {
+    const at = out.length;
+    out += `${i + 1} 0 obj\n${body}\nendobj\n`;
+    return at;
+  });
+  const xref = out.length;
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}`;
+  out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, "latin1");
+}
 const job = (over: Record<string, unknown>) => ({
   id: "job-1",
   title: "Data Engineer",
@@ -82,15 +106,49 @@ async function openFinder(page: Page, title: string) {
   return dialog;
 }
 
-test("starts with no optional keys and says what is not connected", async ({ page, request }) => {
-  const status = await (await request.get("/api/status")).json();
-  expect(status).toMatchObject({ ai: false, jobProvider: "none", model: null, recruiterWebSearch: false });
+test("with no sign-in set up, the server refuses and the page says so", async ({ page, request }) => {
+  expect((await request.get("/api/status")).status()).toBe(401);
+  expect((await request.post("/api/search-jobs", { data: {} })).status()).toBe(401);
   await page.goto("/");
-  await expect(page.getByText("No job source connected")).toBeVisible();
-  await expect(page.getByText(/Keyword analysis/)).toBeVisible();
+  await expect(page.getByText("This site has no sign-in set up, so searching is off.")).toBeVisible();
+  await openDiscover(page);
+  await page.getByRole("button", { name: "Search jobs" }).click();
+  await expect(page.getByText(/Sign in under Settings/).first()).toBeVisible();
+  await expect(page.getByRole("article")).toHaveCount(0);
 });
 
+test("sends security headers, and the page runs under its content policy", async ({ page }) => {
+  const response = await page.goto("/");
+  const headers = response!.headers();
+  expect(headers["content-security-policy"]).toContain("frame-ancestors 'none'");
+  expect(headers["x-content-type-options"]).toBe("nosniff");
+  expect(headers["x-frame-options"]).toBe("DENY");
+  expect(headers["x-powered-by"]).toBeUndefined();
+});
+
+// Reading the file in the browser, including the PDF worker under the content policy, with nothing uploaded.
+for (const [name, mimeType, buffer] of [
+  ["cv.pdf", "application/pdf", resumePdf()],
+  ["cv.txt", "text/plain", Buffer.from(RESUME)],
+] as const) {
+  test(`reads ${name} in the browser without sending it anywhere`, async ({ page }) => {
+    const sent: string[] = [];
+    page.on("request", (r) => {
+      if (r.method() !== "GET") sent.push(`${r.method()} ${new URL(r.url()).pathname}`);
+    });
+    await page.goto("/");
+    // The banner is filled in by the running page, so a file chosen after it is not lost to a page still loading.
+    await expect(page.getByText("This site has no sign-in set up, so searching is off.")).toBeVisible();
+    await page.getByRole("button", { name: /Resume/ }).first().click();
+    await page.locator('input[type="file"]').setInputFiles({ name, mimeType, buffer });
+    // The PDF reader and its worker are downloaded on first use, so allow for a busy machine.
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem("cmh:resumes") ?? ""), { timeout: 20_000 }).toContain("Azure Data Factory");
+    expect(sent).toEqual([]);
+  });
+}
+
 test("shows a clear message, not invented jobs, when no job source is available", async ({ page }) => {
+  await page.route("**/api/search-jobs", (route) => route.fulfill({ json: { jobs: [], mode: "unconfigured", provider: "none", scoring: "none", warnings: [] } }));
   await openDiscover(page);
   await page.getByRole("button", { name: "Search jobs" }).click();
   await expect(page.getByRole("heading", { name: "No job source is connected" })).toBeVisible();

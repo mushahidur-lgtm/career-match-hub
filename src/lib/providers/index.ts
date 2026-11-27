@@ -5,6 +5,7 @@ import { adzunaConfigured, searchAdzuna } from "./adzuna";
 import { ProviderError, dedupeJobs } from "./common";
 import { demoJobs } from "./demo";
 import { jsearchConfigured, searchJSearch } from "./jsearch";
+import { logFailure } from "@/lib/log";
 
 /** One job source. Add a source by adding an entry to PROVIDERS. Only official APIs belong here. */
 export interface JobSearchProvider {
@@ -58,7 +59,7 @@ async function attempt(p: JobSearchProvider, filters: SearchFilters, warnings: s
   try {
     return await p.search(filters);
   } catch (err) {
-    console.error(`${p.name} search failed:`, err instanceof Error ? err.message : err);
+    logFailure(`${p.name} search`, err);
     warnings.push(err instanceof ProviderError ? err.message : `${p.name} search failed.`);
     return null;
   }

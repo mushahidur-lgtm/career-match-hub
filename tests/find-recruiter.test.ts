@@ -2,13 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ContentBlock } from "@anthropic-ai/sdk/resources/messages/messages";
 
 const search = vi.hoisted(() => ({ searchWeb: vi.fn() }));
-const auth = vi.hoisted(() => ({ requireSignedIn: vi.fn(), signInEnforced: vi.fn() }));
+const auth = vi.hoisted(() => ({ requireSignedIn: vi.fn() }));
 
 vi.mock("@/lib/contacts/web-search", async () => {
   const actual = await vi.importActual<typeof import("@/lib/contacts/web-search")>("@/lib/contacts/web-search");
   return { ...actual, searchWeb: search.searchWeb };
 });
-vi.mock("@/lib/cloud/auth", () => ({ requireSignedIn: auth.requireSignedIn, signInEnforced: auth.signInEnforced }));
+vi.mock("@/lib/cloud/auth", () => ({ requireSignedIn: auth.requireSignedIn }));
 
 import { POST, type FindRecruiterResponse, type StreamLine } from "@/app/api/find-recruiter/route";
 import { BLOCKED_FETCH_DOMAINS, mergeParsed, parseCandidatesBlock, parseResponse, userPrompt } from "@/lib/contacts/web-search";
@@ -37,7 +37,6 @@ const nextIp = () => `10.0.0.${++ipCounter}`;
 beforeEach(() => {
   vi.stubEnv("ANTHROPIC_API_KEY", "sk-test-not-real");
   vi.stubEnv("RECRUITER_WEB_SEARCH", "1");
-  auth.signInEnforced.mockReset().mockReturnValue(false);
   search.searchWeb.mockReset();
   auth.requireSignedIn.mockReset().mockResolvedValue({ ok: true });
 });
@@ -167,8 +166,8 @@ describe("the Find Recruiter route", () => {
     const res = await call(job, nextIp());
     expect((await res.json()).note).toMatch(/switched off.*costs money/);
     expect(search.searchWeb).not.toHaveBeenCalled();
-    // Once sign-in is enforced, that is the protection, and no separate opt-in is needed.
-    auth.signInEnforced.mockReturnValue(true);
+    // Signing in is not enough either: paid lookups need the opt-in as well.
+    vi.stubEnv("RECRUITER_WEB_SEARCH", "1");
     search.searchWeb.mockResolvedValue(ok(okParsed()));
     await (await call(job, nextIp())).text();
     expect(search.searchWeb).toHaveBeenCalledTimes(1);

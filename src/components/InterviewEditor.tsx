@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { Quote, Sparkles, Trash2 } from "lucide-react";
+import { apiFetch } from "@/lib/api-fetch";
 import { PREP_DISCLAIMER, buildPracticeSet, type AiPrep } from "@/lib/interview-prep";
 import { LIMITS } from "@/lib/limits";
 import {
@@ -77,7 +78,7 @@ export function InterviewEditor({ app, interview: iv, resume, aiAvailable, onCha
     if (!resume) return;
     setAiState({ loading: true, error: null });
     try {
-      const res = await fetch("/api/interview-prep", {
+      const res = await apiFetch("/api/interview-prep", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

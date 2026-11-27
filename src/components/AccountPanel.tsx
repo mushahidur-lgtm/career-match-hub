@@ -22,7 +22,7 @@ export function AccountPanel({ cloud }: { cloud: CloudApi }) {
           <CloudOff className="size-5 text-muted" aria-hidden /> Cloud sync
         </h2>
         <p className="text-sm text-muted">
-          Off. Your data lives only in this browser. To keep it in step across devices and get a search run for you every morning at 8:00 AM Toronto time, connect a free Supabase project. The README has the steps.
+          Off, and so is job searching: this site answers only its signed-in owner. Your data stays in this browser. To sign in, connect a free Supabase project as described in docs/security-hardening.md.
         </p>
       </section>
     );
@@ -75,7 +75,7 @@ export function AccountPanel({ cloud }: { cloud: CloudApi }) {
             <div className="space-y-2 rounded-lg bg-surface-2 p-3 text-sm">
               <p className="font-medium">Sync is off</p>
               <p className="text-muted">
-                Turning it on uploads a copy of your resumes (the full text), applications, notes, interviews, search history and preferences to your own Supabase project. Nothing is sent to anyone else. The first sync combines what is on this device with
+                Turning it on uploads a copy of your resume text (without email addresses, phone numbers or LinkedIn addresses; never the file), applications, notes, interviews, search history and preferences to your own Supabase project. Nothing is sent to anyone else. The first sync combines what is on this device with
                 what is already there, and never replaces either side.
               </p>
               <button type="button" className={primaryButton} onClick={cloud.enable}>

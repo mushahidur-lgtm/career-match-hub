@@ -1,4 +1,4 @@
-import { Cpu, Database, FlaskConical, Sparkles } from "lucide-react";
+import { Cpu, Database, FlaskConical, Lock, Sparkles } from "lucide-react";
 import type { AppStatus, StoredResults } from "@/types/job";
 
 const PROVIDER_NAME = { adzuna: "Adzuna", jsearch: "JSearch", demo: "Demo", none: "no provider" } as const;
@@ -6,9 +6,22 @@ const PROVIDER_NAME = { adzuna: "Adzuna", jsearch: "JSearch", demo: "Demo", none
 interface Props {
   status: AppStatus | null;
   results: StoredResults | null;
+  /** Why private features are unavailable, for example that nobody is signed in. */
+  locked?: string | null;
 }
 
-export function StatusBanner({ status, results }: Props) {
+export function StatusBanner({ status, results, locked }: Props) {
+  if (locked) {
+    return (
+      <div className="flex flex-wrap gap-2 text-sm" aria-live="polite">
+        <span className="inline-flex items-center gap-2 rounded-lg bg-warn-bg px-3 py-1.5 font-medium text-warn">
+          <Lock className="size-4" aria-hidden />
+          {locked}
+        </span>
+      </div>
+    );
+  }
+
   // After a search, report what actually happened (a live search can fail).
   const provider = results ? results.provider : status?.jobProvider;
   const kind = provider === undefined ? null : provider === "demo" ? "demo" : provider === "none" ? "none" : "live";

@@ -519,12 +519,6 @@ export interface AppStatus {
   recruiterWebSearch?: boolean;
 }
 
-export interface ParseResumeResponse {
-  text: string;
-  fileName: string;
-  warning: string | null;
-}
-
 export interface AnalyzeResumeResponse {
   profile: CandidateProfile;
   warning: string | null;

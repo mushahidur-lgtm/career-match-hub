@@ -8,6 +8,7 @@ import type { IntelStore } from "@/types/job";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isCloudConfigured } from "./config";
 import { readDailyPayload, replayRun, type DailyPayload } from "./daily-payload";
+import { restoreContactDetails } from "./redact";
 import { deleteCloud, fetchRow, fetchRuns, pushRow } from "./remote";
 import { NO_SYNC, forCloud, hashData, isEmptyData, mergeAppData, planSync, type SyncMemory } from "./sync";
 
@@ -188,8 +189,9 @@ export function useCloud({ data, apply, updateIntel, intel }: Options): CloudApi
           // that edit, so look again: with the edit in place this becomes a combine.
           if (hashData(dataRef.current) !== hash) continue;
           if (action === "pull") {
-            applyRef.current(cloud.data);
-            commit({ ...mem, lastVersion: row!.version, lastHash: hashData(cloud.data) });
+            const incoming = restoreContactDetails(local, cloud.data);
+            applyRef.current(incoming);
+            commit({ ...mem, lastVersion: row!.version, lastHash: hashData(incoming) });
             done = true;
             break;
           }
