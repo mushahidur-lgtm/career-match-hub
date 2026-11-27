@@ -5,7 +5,8 @@ import { forCloud, mergeAppData } from "@/lib/cloud/sync";
 import { heuristicProfile } from "@/lib/heuristics";
 import { recordSearch, EMPTY_INTEL } from "@/lib/history";
 import { scoreJob } from "@/lib/matching/engine";
-import { addSavedJob, setSavedNotes } from "@/lib/saved";
+import { recordFeedback } from "@/lib/feedback";
+import { addSavedJob, setSavedNotes, setSavedStatus } from "@/lib/saved";
 import { toMatchInput } from "@/lib/search/match-input";
 import { DEFAULT_FILTERS, DEFAULT_PREFERENCES, type Job } from "@/types/job";
 
@@ -53,15 +54,16 @@ function appData(): AppData {
     match: null,
   };
   const job = { ...base, match: scoreJob(base, toMatchInput(profile, TEXT, DEFAULT_PREFERENCES)) };
-  let saved = addSavedJob([], job, "Applied", new Date("2026-11-26T12:00:00Z"), { id: resume.id, name: resume.name });
+  const ref = { id: resume.id, name: resume.name };
+  let saved = addSavedJob([], job, "Interested", new Date("2026-11-26T11:00:00Z"), ref);
+  // Moving to Applied is what records the resume, both on the application and in its history.
+  saved = setSavedStatus(saved, job.id, "Applied", new Date("2026-11-26T12:00:00Z"), { resume: ref });
   saved = setSavedNotes(saved, job.id, `Call recruiter on ${PHONE}`);
   saved = saved.map((s) => ({ ...s, coverLetter: `Reach me at ${EMAIL}` }));
   const intel = recordSearch(EMPTY_INTEL, { at: "2026-11-26T12:00:00.000Z", filters: DEFAULT_FILTERS, response: { jobs: [job], provider: "adzuna", scoring: "heuristic" }, resume });
-  return { resumes: [resume], activeResumeId: "r1", filters: DEFAULT_FILTERS, preferences: DEFAULT_PREFERENCES, saved, intel };
+  const feedback = recordFeedback(recordFeedback([], "application_submitted", job), "skill_match_corrected", job, "Python");
+  return { resumes: [resume], activeResumeId: "r1", filters: DEFAULT_FILTERS, preferences: DEFAULT_PREFERENCES, saved, intel, feedback };
 }
-
-/** Everything in the copy that came from a resume. */
-const fromResume = (d: AppData) => JSON.stringify([d.resumes, d.saved.map((s) => [s.resumeName, s.job.match]), d.intel?.history]);
 
 describe("the cloud copy", () => {
   const local = appData();
@@ -75,8 +77,18 @@ describe("the cloud copy", () => {
     expect(local.intel!.history[0].resumeName).toMatch(CONTACT);
   });
 
-  it("has no contact details in anything that came from a resume", () => {
-    expect(fromResume(sent)).not.toMatch(CONTACT);
+  it("has no contact details anywhere, apart from what you typed and the posting itself", () => {
+    expect(local.saved[0].history?.some((h) => h.text.startsWith("Resume used: ") && CONTACT.test(h.text))).toBe(true);
+    // The whole upload, with only the deliberate exceptions blanked. A new place that copies resume text fails here.
+    const rest = structuredClone(sent);
+    for (const s of rest.saved) {
+      expect(s.notes).toContain(PHONE);
+      s.notes = "";
+      s.coverLetter = "";
+      s.job.description = "";
+    }
+    delete rest.contacts;
+    expect(JSON.stringify(rest)).not.toMatch(CONTACT);
   });
 
   it("keeps what you typed yourself, and the posting", () => {
@@ -120,6 +132,13 @@ describe("the cloud copy", () => {
     expect(merged.saved[0].notes).toBe("edited elsewhere");
     expect(merged.saved[0].resumeName).toBe(here.data.saved[0].resumeName);
     expect(merged.saved[0].job.match).toEqual(here.data.saved[0].job.match);
+  });
+
+  it("does not add the same resume twice when it was uploaded on two devices", () => {
+    const other = { ...sent, resumes: [{ ...sent.resumes[0], id: "added-on-another-device" }] };
+    expect(mergeAppData(local, other).resumes).toEqual(local.resumes);
+    const different = { ...sent, resumes: [{ ...sent.resumes[0], id: "r2", text: "Another resume altogether." }] };
+    expect(mergeAppData(local, different).resumes).toHaveLength(2);
   });
 
   it("does not undo a change made on another device", () => {

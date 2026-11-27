@@ -4,7 +4,7 @@ import { mergeContactStores } from "@/lib/contacts/model";
 import { EMPTY_INTEL, mergeIntel } from "@/lib/history";
 import { EMPTY_CONTACTS } from "@/types/contacts";
 import { EMPTY_WATCHLIST } from "@/types/watchlist";
-import { withoutResumeContactDetails } from "./redact";
+import { withoutContactDetails, withoutResumeContactDetails } from "./redact";
 import { mergeWatchlists } from "@/lib/watchlist/model";
 
 /**
@@ -59,8 +59,11 @@ export function planSync(input: { cloudVersion: number | null; memory: SyncMemor
  * which is why a merge happens only when both copies changed.
  */
 export function mergeAppData(local: AppData, cloud: AppData): AppData {
+  // The cloud copy lacks contact details, so the same resume added on two devices is compared without them.
+  const bare = (text: string) => withoutContactDetails(text.trim());
+  const have = new Set(local.resumes.map((r) => bare(r.text)));
   return {
-    resumes: mergeResumes(local.resumes, cloud.resumes),
+    resumes: mergeResumes(local.resumes, cloud.resumes.filter((r) => !have.has(bare(r.text)))),
     activeResumeId: local.activeResumeId ?? cloud.activeResumeId,
     filters: local.filters,
     preferences: local.preferences,

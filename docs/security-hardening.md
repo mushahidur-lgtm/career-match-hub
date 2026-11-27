@@ -72,7 +72,7 @@ the production address, preview addresses and generated deployment addresses. Ve
 | 11 | Request bodies had no size limit of their own | Low | Capped per route, stopping while reading |
 | 12 | A key alone enabled paid Claude calls | Medium (cost) | Also needs `AI_ENABLED=1`; web search needs a further switch |
 | 13 | Provider requests carrying an API key followed redirects | Low | Redirects are refused for those requests |
-| 14 | The cloud copy held contact details from the resume | Low (privacy) | Email addresses, phone numbers and LinkedIn addresses are removed from everything that came from a resume: its name, file name, text and profile, quotes in saved match results, and the resume name on applications and search history |
+| 14 | The cloud copy held contact details from the resume | Low (privacy) | Email addresses, phone numbers and LinkedIn addresses that match known patterns are removed from what came from a resume: its name, file name, text and profile, quotes in saved match results, and the resume name on applications, their activity history and search history |
 
 ## How it works now
 
@@ -102,7 +102,7 @@ Run on 2026-11-26 on Windows.
 
 | Check | Result |
 | --- | --- |
-| `npm test` | 782 passed, 38 files |
+| `npm test` | 783 passed, 38 files |
 | `npm run typecheck`, `npm run lint`, `npm run build` | Clean |
 | `npm run test:e2e` (Chrome) | 11 passed, including reading PDF, DOCX and TXT in the browser |
 | Archive check over the 17 `.docx` files shipped with `mammoth` | All accepted (run once by hand) |

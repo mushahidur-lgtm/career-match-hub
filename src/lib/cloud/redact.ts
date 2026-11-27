@@ -5,7 +5,7 @@ import type { AppData } from "@/lib/backup";
  * resume. The copy on this device is not changed. Names and street addresses are not recognised.
  *
  * What comes from a resume: each version's name, file name, text and profile; the match results on saved jobs, which
- * quote resume lines; and the resume name kept on applications and in search history. A new field that copies resume
+ * quote resume lines; and the resume name kept on applications, in their activity history and in search history. A new field that copies resume
  * text must be added to `withoutResumeContactDetails`. What you typed yourself (notes, cover letters, saved contacts) is
  * left as it is.
  */
@@ -37,6 +37,8 @@ export function withoutResumeContactDetails(data: AppData): AppData {
     saved: data.saved.map((s) => ({
       ...s,
       ...(s.resumeName ? { resumeName: scrub(s.resumeName) } : {}),
+      // The app writes the resume's name into the activity history. Entries you typed are left alone.
+      ...(s.history ? { history: s.history.map((h) => (h.text.startsWith("Resume used: ") ? { ...h, text: scrub(h.text) } : h)) } : {}),
       job: s.job.match ? { ...s.job, match: scrub(s.job.match) } : s.job,
     })),
     ...(data.intel ? { intel: { ...data.intel, history: data.intel.history.map((h) => ({ ...h, resumeName: scrub(h.resumeName) })) } } : {}),
