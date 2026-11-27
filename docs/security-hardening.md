@@ -72,15 +72,15 @@ the production address, preview addresses and generated deployment addresses. Ve
 | 11 | Request bodies had no size limit of their own | Low | Capped per route, stopping while reading |
 | 12 | A key alone enabled paid Claude calls | Medium (cost) | Also needs `AI_ENABLED=1`; web search needs a further switch |
 | 13 | Provider requests carrying an API key followed redirects | Low | Redirects are refused for those requests |
-| 14 | The cloud copy held contact details from the resume | Low (privacy) | Email addresses, phone numbers and LinkedIn addresses are removed before upload |
+| 14 | The cloud copy held contact details from the resume | Low (privacy) | Email addresses, phone numbers and LinkedIn addresses are removed from everything that came from a resume: its name, file name, text and profile, quotes in saved match results, and the resume name on applications and search history |
 
 ## How it works now
 
 - **Sign-in:** the browser holds a Supabase session and sends its token in an `Authorization` header. The server asks
   Supabase who the token belongs to and compares that id with `OWNER_USER_ID`. No token: 401. Another account: 403.
   Configuration missing or wrong: 503. Nothing is read from the request before this.
-- **CORS, CSRF, cookies:** the app sets no CORS headers, so other sites cannot read its responses, and it uses no
-  cookies of its own, so another site cannot make your browser act for you. The only cookie is Vercel's, which Vercel
+- **CORS, CSRF, cookies:** the app's code sets no CORS headers, so other sites cannot read its API responses (Vercel
+  itself marks the static page, which holds no personal data, as readable by any site), and it uses no cookies of its own, so another site cannot make your browser act for you. The only cookie is Vercel's, which Vercel
   manages. The trade-off: the session token is in `localStorage`, where a script injection could read it. Moving to
   HttpOnly cookies would be a separate redesign.
 - **Morning run:** still `CRON_SECRET`, and it now runs only for the owner.
@@ -92,7 +92,7 @@ the production address, preview addresses and generated deployment addresses. Ve
 | Browser `localStorage` | Resume text and profile, applications, notes, contacts, history, cached suggestions, the pre-sync backup, the sign-in session | Not encrypted. Signing out does **not** erase it |
 | Browser `sessionStorage` | Nothing | |
 | Server | Resume text and profile pass through during a search (for scoring) and during AI actions | Not stored. Resume files never arrive |
-| Supabase (only with sync on) | Resume text without its email addresses, phone numbers and LinkedIn addresses. **Cover letters, notes, application details and saved contacts are copied in full** | Names and street addresses remain. A second device receives the stripped resume text; only the device that already had the full text keeps it. A copy uploaded before this change keeps full text until it is saved again: delete the cloud copy and turn sync on again |
+| Supabase (only with sync on) | Resume text, profile and match quotes without email addresses, phone numbers and LinkedIn addresses. **Cover letters, notes, application details, saved contacts and job postings are copied in full** | Names, street addresses and phone numbers in unusual formats remain. A second device receives the stripped version; only the device that already had the full text keeps it. A copy uploaded before this change keeps full text until it is saved again: delete the cloud copy and turn sync on again |
 | Storage buckets | None: the app uses no file storage | |
 | Public directories | No uploads are written anywhere | |
 
@@ -102,7 +102,7 @@ Run on 2026-11-26 on Windows.
 
 | Check | Result |
 | --- | --- |
-| `npm test` | 774 passed, 37 files |
+| `npm test` | 782 passed, 38 files |
 | `npm run typecheck`, `npm run lint`, `npm run build` | Clean |
 | `npm run test:e2e` (Chrome) | 11 passed, including reading PDF, DOCX and TXT in the browser |
 | Archive check over the 17 `.docx` files shipped with `mammoth` | All accepted (run once by hand) |

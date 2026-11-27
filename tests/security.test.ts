@@ -4,9 +4,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import nextConfig from "../next.config";
 import { ownerStore } from "@/lib/cloud/admin";
-import { restoreContactDetails, withoutContactDetails } from "@/lib/cloud/redact";
-import { forCloud } from "@/lib/cloud/sync";
-import type { AppData } from "@/lib/backup";
+import { withoutContactDetails } from "@/lib/cloud/redact";
 import { DEFAULT_FILTERS } from "@/types/job";
 
 // The real sign-in and limit code, with the database replaced at the network.
@@ -236,18 +234,6 @@ describe("private details stay out of responses and logs", () => {
           .map((line) => `${relative(SRC, f)}: ${line.trim()}`),
       );
     expect(offenders).toEqual([]);
-  });
-
-  it("the cloud copy of a resume leaves out contact details, and a pull does not strip this device", () => {
-    const text = `${SECRET} linkedin.com/in/jane-candidate +44 20 7946 0958\nData Engineer, Acme, 2019 - 2023. Cut costs 1,250,000 to 900,000.`;
-    const local = { resumes: [{ id: "r1", text }], contacts: undefined } as unknown as AppData;
-    const sent = forCloud(local);
-    expect(sent.resumes[0].text).not.toMatch(/jane\.candidate@|555-0123|in\/jane|7946/);
-    expect(sent.resumes[0].text).toContain("2019 - 2023. Cut costs 1,250,000 to 900,000.");
-    expect(local.resumes[0].text).toBe(text);
-    expect(restoreContactDetails(local, sent).resumes[0].text).toBe(text);
-    const edited = { ...sent, resumes: [{ ...sent.resumes[0], text: "A newer version from another device." }] } as AppData;
-    expect(restoreContactDetails(local, edited).resumes[0].text).toBe("A newer version from another device.");
   });
 
   it("removing contact details stays fast on hostile text", () => {

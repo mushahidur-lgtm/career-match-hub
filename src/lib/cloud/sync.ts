@@ -4,7 +4,7 @@ import { mergeContactStores } from "@/lib/contacts/model";
 import { EMPTY_INTEL, mergeIntel } from "@/lib/history";
 import { EMPTY_CONTACTS } from "@/types/contacts";
 import { EMPTY_WATCHLIST } from "@/types/watchlist";
-import { withoutContactDetails } from "./redact";
+import { withoutResumeContactDetails } from "./redact";
 import { mergeWatchlists } from "@/lib/watchlist/model";
 
 /**
@@ -73,14 +73,13 @@ export function mergeAppData(local: AppData, cloud: AppData): AppData {
 }
 
 /**
- * What is sent to the cloud. Cached lookups are left out: they are large, and cheap to run again. Resume text goes
- * without its email addresses, phone numbers and profile links. The original files are never stored anywhere.
+ * What is sent to the cloud. Cached lookups are left out: they are large, and cheap to run again. Whatever came from a
+ * resume goes without email addresses, phone numbers and profile links. The original files are never stored anywhere.
  */
-export const forCloud = (d: AppData): AppData => ({
-  ...d,
-  resumes: d.resumes.map((r) => ({ ...r, text: withoutContactDetails(r.text) })),
-  ...(d.contacts ? { contacts: { ...d.contacts, finds: [] } } : {}),
-});
+export const forCloud = (d: AppData): AppData => {
+  const out = withoutResumeContactDetails(d);
+  return out.contacts ? { ...out, contacts: { ...out.contacts, finds: [] } } : out;
+};
 
 export const isEmptyData = (d: AppData): boolean =>
   d.resumes.length === 0 && d.saved.length === 0 && (d.intel?.history.length ?? 0) === 0 && (d.intel?.seen.length ?? 0) === 0 && (d.contacts?.contacts.length ?? 0) === 0 && (d.contacts?.deletedIds.length ?? 0) === 0 && (d.watchlist?.sites.length ?? 0) === 0 && (d.watchlist?.deletedIds.length ?? 0) === 0;

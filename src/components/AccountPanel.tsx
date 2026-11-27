@@ -75,7 +75,7 @@ export function AccountPanel({ cloud }: { cloud: CloudApi }) {
             <div className="space-y-2 rounded-lg bg-surface-2 p-3 text-sm">
               <p className="font-medium">Sync is off</p>
               <p className="text-muted">
-                Turning it on uploads a copy of your resume text (without email addresses, phone numbers or LinkedIn addresses; never the file), applications, notes, interviews, search history and preferences to your own Supabase project. Nothing is sent to anyone else. The first sync combines what is on this device with
+                Turning it on uploads a copy of your resume text and profile (never the file), applications, notes, interviews, search history and preferences to your own Supabase project. Email addresses, phone numbers and LinkedIn addresses are removed from what came from your resume, but not from what you typed yourself, such as notes, cover letters and contacts. Nothing is sent to anyone else. The first sync combines what is on this device with
                 what is already there, and never replaces either side.
               </p>
               <button type="button" className={primaryButton} onClick={cloud.enable}>

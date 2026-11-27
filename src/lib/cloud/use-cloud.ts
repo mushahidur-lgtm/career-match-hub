@@ -188,8 +188,8 @@ export function useCloud({ data, apply, updateIntel, intel }: Options): CloudApi
           // Something may have been edited while the cloud copy was being fetched. Replacing the data now would lose
           // that edit, so look again: with the edit in place this becomes a combine.
           if (hashData(dataRef.current) !== hash) continue;
+          const incoming = restoreContactDetails(local, cloud.data);
           if (action === "pull") {
-            const incoming = restoreContactDetails(local, cloud.data);
             applyRef.current(incoming);
             commit({ ...mem, lastVersion: row!.version, lastHash: hashData(incoming) });
             done = true;
@@ -201,7 +201,7 @@ export function useCloud({ data, apply, updateIntel, intel }: Options): CloudApi
           } catch {
             /* storage full: the merge still never deletes anything */
           }
-          toPush = mergeAppData(local, cloud.data);
+          toPush = mergeAppData(local, incoming);
           applyRef.current(toPush);
         }
 
