@@ -44,8 +44,8 @@ the production address, preview addresses and generated deployment addresses. Ve
 <https://vercel.com/docs/deployment-protection>. I have not seen your project's settings.
 
 - Do not create shareable links or protection exceptions.
-- Morning run only: create **Protection Bypass for Automation** and store the value as the GitHub repository secret
-  `VERCEL_AUTOMATION_BYPASS_SECRET`. That value opens the whole site's outer door, so treat it as a password. The app's
+- Morning run only: create **Protection Bypass for Automation** (Vercel documents it as available on all plans) and
+  store the value as the GitHub repository secret `VERCEL_AUTOMATION_BYPASS_SECRET`. It also skips Vercel Firewall blocks. That value opens the whole site's outer door, so treat it as a password. The app's
   own sign-in still applies behind it.
 
 ### 4. Check it
@@ -92,7 +92,7 @@ the production address, preview addresses and generated deployment addresses. Ve
 | Browser `localStorage` | Resume text and profile, applications, notes, contacts, history, cached suggestions, the pre-sync backup, the sign-in session | Not encrypted. Signing out does **not** erase it |
 | Browser `sessionStorage` | Nothing | |
 | Server | Resume text and profile pass through during a search (for scoring) and during AI actions | Not stored. Resume files never arrive |
-| Supabase (only with sync on) | Resume text without contact details, applications, notes, contacts, history | Names and street addresses remain. A copy uploaded before this change keeps full text until it is saved again: delete the cloud copy and turn sync on again |
+| Supabase (only with sync on) | Resume text without its email addresses, phone numbers and LinkedIn addresses. **Cover letters, notes, application details and saved contacts are copied in full** | Names and street addresses remain. A second device receives the stripped resume text; only the device that already had the full text keeps it. A copy uploaded before this change keeps full text until it is saved again: delete the cloud copy and turn sync on again |
 | Storage buckets | None: the app uses no file storage | |
 | Public directories | No uploads are written anywhere | |
 
@@ -102,9 +102,10 @@ Run on 2026-11-26 on Windows.
 
 | Check | Result |
 | --- | --- |
-| `npm test` | 773 passed, 37 files |
+| `npm test` | 774 passed, 37 files |
 | `npm run typecheck`, `npm run lint`, `npm run build` | Clean |
-| `npm run test:e2e` (Chrome) | 10 passed |
+| `npm run test:e2e` (Chrome) | 11 passed, including reading PDF, DOCX and TXT in the browser |
+| Archive check over the 17 `.docx` files shipped with `mammoth` | All accepted (run once by hand) |
 | `npm run check:bundle` after a build with made-up secrets | None found; a planted value was detected |
 | Signed-in walk in Chrome against a stand-in sign-in server on this machine | Signed out locked, signed in, status and search answered, signed out locked; no console errors |
 | `npm audit` | 0 vulnerabilities |
@@ -150,3 +151,6 @@ Expect conflicts. Afterwards, before deploying:
 - `/api/job-assessment` has no sign-in check: add `guard`. The route test fails until you do.
 - The two new panels must call `apiFetch`, and their server logs should use `logFailure`.
 - Add both routes to the list in `tests/security.test.ts`.
+
+The wiki on branch `docs/project-wiki` describes the app before these changes. Its known-risks and security pages
+need updating once this is merged.

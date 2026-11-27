@@ -48,7 +48,6 @@ jobs:
       - name: Production build (npm run build)
         run: npm run build
         env:
-          &fake
           SUPABASE_SERVICE_ROLE_KEY: ci-fake-service-role-key
           ANTHROPIC_API_KEY: ci-fake-anthropic-key
           ADZUNA_APP_ID: ci-fake-adzuna-id
@@ -59,7 +58,14 @@ jobs:
 
       - name: No server secret in browser files (npm run check:bundle)
         run: npm run check:bundle -- --require-values
-        env: *fake
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ci-fake-service-role-key
+          ANTHROPIC_API_KEY: ci-fake-anthropic-key
+          ADZUNA_APP_ID: ci-fake-adzuna-id
+          ADZUNA_APP_KEY: ci-fake-adzuna-key
+          RAPIDAPI_KEY: ci-fake-rapidapi-key
+          CRON_SECRET: ci-fake-cron-secret
+          OWNER_USER_ID: 33333333-3333-4333-8333-333333333333
 
   e2e:
     name: Browser smoke tests

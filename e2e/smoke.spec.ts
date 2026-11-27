@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { docxParts, zip } from "../tests/fixtures/docx";
 
 /**
  * Smoke tests for the free, no-key configuration. Job search results are supplied by a mock of this app's own
@@ -130,6 +131,7 @@ test("sends security headers, and the page runs under its content policy", async
 for (const [name, mimeType, buffer] of [
   ["cv.pdf", "application/pdf", resumePdf()],
   ["cv.txt", "text/plain", Buffer.from(RESUME)],
+  ["cv.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", Buffer.from(zip(docxParts(RESUME)))],
 ] as const) {
   test(`reads ${name} in the browser without sending it anywhere`, async ({ page }) => {
     const sent: string[] = [];
