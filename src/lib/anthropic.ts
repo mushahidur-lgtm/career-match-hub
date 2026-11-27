@@ -17,7 +17,8 @@ export function activeModel(): string {
 }
 
 export function isAiConfigured(): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY?.trim());
+  // Paid, so a key on its own does nothing: it also has to be switched on.
+  return process.env.AI_ENABLED?.trim() === "1" && Boolean(process.env.ANTHROPIC_API_KEY?.trim());
 }
 
 let client: Anthropic | null = null;

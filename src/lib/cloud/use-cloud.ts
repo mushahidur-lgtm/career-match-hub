@@ -8,6 +8,7 @@ import type { IntelStore } from "@/types/job";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isCloudConfigured } from "./config";
 import { readDailyPayload, replayRun, type DailyPayload } from "./daily-payload";
+import { restoreContactDetails } from "./redact";
 import { deleteCloud, fetchRow, fetchRuns, pushRow } from "./remote";
 import { NO_SYNC, forCloud, hashData, isEmptyData, mergeAppData, planSync, type SyncMemory } from "./sync";
 
@@ -187,9 +188,10 @@ export function useCloud({ data, apply, updateIntel, intel }: Options): CloudApi
           // Something may have been edited while the cloud copy was being fetched. Replacing the data now would lose
           // that edit, so look again: with the edit in place this becomes a combine.
           if (hashData(dataRef.current) !== hash) continue;
+          const incoming = restoreContactDetails(local, cloud.data);
           if (action === "pull") {
-            applyRef.current(cloud.data);
-            commit({ ...mem, lastVersion: row!.version, lastHash: hashData(cloud.data) });
+            applyRef.current(incoming);
+            commit({ ...mem, lastVersion: row!.version, lastHash: hashData(incoming) });
             done = true;
             break;
           }
@@ -199,7 +201,7 @@ export function useCloud({ data, apply, updateIntel, intel }: Options): CloudApi
           } catch {
             /* storage full: the merge still never deletes anything */
           }
-          toPush = mergeAppData(local, cloud.data);
+          toPush = mergeAppData(local, incoming);
           applyRef.current(toPush);
         }
 

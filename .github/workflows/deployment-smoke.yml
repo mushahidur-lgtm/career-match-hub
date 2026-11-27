@@ -1,8 +1,8 @@
 name: Deployment smoke check
 
 # After a successful production deployment (Vercel reports it to GitHub), or when started by hand with a URL, this makes
-# plain GET requests to two public pages and checks they answer. It never sends a POST, never searches for jobs and never
-# starts a recruiter lookup, so it spends no job-board quota and no Anthropic credit. It reads no secrets.
+# two plain GET requests and checks that the site is closed to a visitor: either Vercel's protection answers, or the app
+# loads and its private status route refuses. It never sends a POST, spends no quota and reads no secrets.
 on:
   deployment_status:
   workflow_dispatch:
@@ -21,12 +21,12 @@ concurrency:
 
 jobs:
   check:
-    name: Public health check
+    name: Visitor is refused
     if: github.event_name == 'workflow_dispatch' || (github.event.deployment_status.state == 'success' && github.event.deployment_status.environment == 'Production')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check the home page and the public status route
+      - name: Check what a visitor can reach
         env:
           # Passed as environment variables, never spliced into the script text.
           INPUT_URL: ${{ inputs.url }}
@@ -41,23 +41,25 @@ jobs:
           fi
           echo "Checking $site"
 
-          # A new deployment can take a moment to answer, so each request is tried a few times.
+          # A new deployment can take a moment to answer, so a server error is tried a few times.
           get() {
             for attempt in 1 2 3 4 5; do
               code=$(curl -sS -o "$2" -w '%{http_code}' --max-time 20 "$site$1" || echo 000)
-              if [ "$code" = "200" ]; then return 0; fi
-              echo "GET $1 answered $code (attempt $attempt of 5)"
-              sleep 10
+              case "$code" in 000|404|5*) echo "GET $1 answered $code (attempt $attempt of 5)"; sleep 10 ;; *) return 0 ;; esac
             done
             return 1
           }
 
-          get "/" home.html || { echo "::error::The home page did not answer 200."; exit 1; }
-          grep -q "Career Match Hub" home.html || { echo "::error::The home page did not contain the app."; exit 1; }
-          echo "Home page: ok"
+          get "/" home.html || { echo "::error::The site did not answer."; exit 1; }
+          case "$code" in
+            200) grep -q "Career Match Hub" home.html || { echo "::error::The home page did not contain the app."; exit 1; }
+                 echo "::warning::The page itself is public. Turn on Vercel Deployment Protection to close it." ;;
+            30?|401|403) echo "Home page: protected ($code)" ;;
+            *) echo "::error::The home page answered $code."; exit 1 ;;
+          esac
 
-          get "/api/status" status.json || { echo "::error::/api/status did not answer 200."; exit 1; }
-          jq -e '(.ai | type == "boolean") and (.jobProvider | type == "string") and (.recruiterWebSearch | type == "boolean")' status.json > /dev/null \
-            || { echo "::error::/api/status did not have the expected shape."; exit 1; }
-          # Only these three facts are printed, never the whole body.
-          jq -r '"Status route: ok (ai=\(.ai), jobProvider=\(.jobProvider), recruiterWebSearch=\(.recruiterWebSearch))"' status.json
+          get "/api/status" status.json || { echo "::error::/api/status did not answer."; exit 1; }
+          case "$code" in
+            30?|401|403) echo "Status route: refused to a visitor ($code)" ;;
+            *) echo "::error::/api/status answered $code to a visitor. It must refuse."; exit 1 ;;
+          esac

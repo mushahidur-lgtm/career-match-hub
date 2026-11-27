@@ -8,7 +8,7 @@ import { defineConfig, devices } from "@playwright/test";
  * Locally, set PW_CHANNEL=chrome (or msedge) to use a browser you already have instead of downloading one.
  */
 const PORT = 3100;
-const blank = ["ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "ADZUNA_APP_ID", "ADZUNA_APP_KEY", "RAPIDAPI_KEY", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL", "CRON_SECRET", "DAILY_RUN_EMAILS", "RECRUITER_WEB_SEARCH", "CMH_DEMO", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY"];
+const blank = ["ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "ADZUNA_APP_ID", "ADZUNA_APP_KEY", "RAPIDAPI_KEY", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL", "CRON_SECRET", "DAILY_RUN_EMAILS", "RECRUITER_WEB_SEARCH", "CMH_DEMO", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OWNER_USER_ID", "AI_ENABLED"];
 
 export default defineConfig({
   testDir: "./e2e",

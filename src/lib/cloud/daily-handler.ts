@@ -5,6 +5,7 @@ import type { AppData } from "@/lib/backup";
 import type { DailyPayload } from "./daily-payload";
 import type { RunInput, RunOutcome } from "./daily-run";
 import { isDue, torontoParts } from "./schedule";
+import { logFailure } from "@/lib/log";
 
 export interface DailyStore {
   findUsers(emails: string[]): Promise<{ id: string }[]>;
@@ -73,7 +74,7 @@ export async function handleDaily(req: Request, deps: DailyDeps): Promise<NextRe
       results.push({ status: "ran", searches: outcome.payload.searches.length, jobs: outcome.payload.observations.length });
     }
   } catch (err) {
-    console.error("daily run failed:", err instanceof Error ? err.message : err);
+    logFailure("daily run", err);
     return NextResponse.json({ error: "The daily run failed.", results }, { status: 500 });
   }
   if (!results.length) results.push({ status: "skipped", reason: "No account matches DAILY_RUN_EMAILS." });

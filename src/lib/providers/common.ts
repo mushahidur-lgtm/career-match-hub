@@ -124,7 +124,7 @@ export function applyFilters(jobs: Job[], f: SearchFilters): Job[] {
 export async function fetchJson<T>(url: string, init: RequestInit = {}, label: string): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(url, { ...init, cache: "no-store", signal: AbortSignal.timeout(15_000) });
+    res = await fetch(url, { ...init, ...(init.headers ? { redirect: "error" as const } : {}), cache: "no-store", signal: AbortSignal.timeout(15_000) });
   } catch {
     throw new ProviderError(`${label} could not be reached.`);
   }

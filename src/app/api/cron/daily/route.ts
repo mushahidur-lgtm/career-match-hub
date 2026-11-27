@@ -1,4 +1,5 @@
-import { adminClient, supabaseStore } from "@/lib/cloud/admin";
+import { adminClient, ownerStore, supabaseStore } from "@/lib/cloud/admin";
+import { authConfig } from "@/lib/cloud/auth";
 import { handleDaily } from "@/lib/cloud/daily-handler";
 import { runDaily } from "@/lib/cloud/daily-run";
 
@@ -14,10 +15,12 @@ const BUDGET_MS = Math.min(280, Math.max(5, Number(process.env.DAILY_BUDGET_SECO
 
 export async function POST(req: Request) {
   const sb = adminClient();
+  const owner = authConfig()?.ownerId;
   return handleDaily(req, {
     secret: process.env.CRON_SECRET,
     emails: (process.env.DAILY_RUN_EMAILS ?? "").split(",").map((e) => e.trim()).filter(Boolean),
-    store: sb ? supabaseStore(sb) : null,
+    // Without a named owner there is nobody it may run for.
+    store: sb && owner ? ownerStore(supabaseStore(sb), owner) : null,
     run: runDaily,
     now: () => new Date(),
     maxQueries: MAX_QUERIES,

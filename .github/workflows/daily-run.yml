@@ -28,6 +28,8 @@ jobs:
         env:
           SITE_URL: ${{ secrets.SITE_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          # Needed only when Vercel Deployment Protection covers production (see docs/security-hardening.md).
+          PROTECTION_BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
           FORCE: ${{ inputs.force }}
         run: |
           set -euo pipefail
@@ -37,7 +39,9 @@ jobs:
           fi
           body='{}'
           if [ "${FORCE:-}" = "true" ]; then body='{"force":true}'; fi
-          code=$(curl -sS -o response.json -w "%{http_code}" --max-time 330 -X POST "${SITE_URL%/}/api/cron/daily" \
+          bypass=()
+          if [ -n "${PROTECTION_BYPASS:-}" ]; then bypass=(-H "x-vercel-protection-bypass: ${PROTECTION_BYPASS}"); fi
+          code=$(curl -sS -o response.json -w "%{http_code}" --max-time 330 -X POST "${SITE_URL%/}/api/cron/daily" ${bypass[@]+"${bypass[@]}"} \
             -H "Authorization: Bearer ${CRON_SECRET}" -H "Content-Type: application/json" -d "$body")
           echo "HTTP $code"
           cat response.json

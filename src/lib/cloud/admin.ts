@@ -19,6 +19,11 @@ export function adminClient(): SupabaseClient | null {
 
 const RowSchema = z.object({ data: z.unknown() });
 
+/** Limits a store to the owner's account, whatever the email list says. */
+export function ownerStore(store: DailyStore, ownerId: string): DailyStore {
+  return { ...store, findUsers: async (emails) => (await store.findUsers(emails)).filter((u) => u.id.toLowerCase() === ownerId) };
+}
+
 export function supabaseStore(sb: SupabaseClient): DailyStore {
   return {
     async findUsers(emails) {

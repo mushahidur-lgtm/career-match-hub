@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireSignedIn, signInEnforced } from "@/lib/cloud/auth";
+import { authenticate, takeLimit } from "@/lib/cloud/guard";
 import { describeToolError, searchWeb, webSearchEnabled } from "@/lib/contacts/web-search";
 import { verifyCandidates } from "@/lib/contacts/verify";
-import { badRequest, rateLimit } from "@/lib/rate-limit";
+import { logFailure } from "@/lib/log";
+import { badRequest } from "@/lib/rate-limit";
+import { readJson } from "@/lib/request";
 import type { Contact } from "@/types/contacts";
 
 export const runtime = "nodejs";
@@ -51,7 +53,12 @@ export interface FindRecruiterResponse {
 export type StreamLine = { type: "progress"; message: string } | { type: "result"; result: FindRecruiterResponse } | { type: "error"; error: string };
 
 export async function POST(req: Request) {
-  const parsed = Body.safeParse(await req.json().catch(() => null));
+  const owner = await authenticate(req);
+  if (owner instanceof NextResponse) return owner;
+
+  const input = await readJson(req, 64_000);
+  if (!input.ok && input.tooLarge) return badRequest("The request is too large.", 413);
+  const parsed = Body.safeParse(input.ok ? input.value : null);
   if (!parsed.success) return badRequest("Send the job title, company and location.");
   const job = parsed.data;
 
@@ -62,7 +69,7 @@ export async function POST(req: Request) {
   if (/^company not listed$/i.test(job.company.trim())) {
     return NextResponse.json<FindRecruiterResponse>({ candidates: [], note: "The posting does not name the employer, so there is no company to search for.", searches: 0 });
   }
-  if (!webSearchEnabled(signInEnforced())) {
+  if (!webSearchEnabled()) {
     return NextResponse.json<FindRecruiterResponse>({
       candidates: [],
       note: "Web lookups are switched off on this site, because each one costs money. The site owner can enable them (see the README). Names the posting itself states are still shown.",
@@ -71,10 +78,9 @@ export async function POST(req: Request) {
   }
 
   // Only a real lookup counts against the limits, so sample-job clicks and refusals do not use them up.
-  const limited = rateLimit(req, "find-recruiter", 3, 60_000) ?? rateLimit(req, "find-recruiter-hour", 12, 3_600_000);
+  const limited =
+    (await takeLimit(req, owner, { name: "find-recruiter", max: 3, windowSeconds: 60 })) ?? (await takeLimit(req, owner, { name: "find-recruiter-hour", max: 12, windowSeconds: 3600 }));
   if (limited) return limited;
-  const auth = await requireSignedIn(req);
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const now = Date.now();
   while (recent.length && now - recent[0] > 3_600_000) recent.shift();
@@ -135,7 +141,7 @@ export async function POST(req: Request) {
           result: { candidates: contacts, note, searches: found.searches, fetches: found.fetches, queries: found.queries.slice(0, 12), readHosts: found.readHosts, usage, unsupported: dropped.length, reasons, latencyMs: Date.now() - started, stoppedEarly: found.stoppedEarly },
         });
       } catch (err) {
-        console.error("find-recruiter stream failed:", err instanceof Error ? err.message : err);
+        logFailure("find-recruiter stream", err);
         send({ type: "error", error: "The search failed. Nothing was saved. Try again." });
       } finally {
         try {

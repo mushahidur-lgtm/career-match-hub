@@ -11,15 +11,21 @@ Upload your resume, see which jobs fit your skills, and track every application 
 - **Interview tracker.** Every interview across your applications: stage, format, date and time, interviewers, topics to review, questions to ask, preparation notes and feedback. Adding one moves the application to the Interview stage. Practice prompts come from the posting and are labelled as practice, not a prediction of what will be asked; a skill you lack is prompted as "how would you get up to speed", never as experience to claim. With a Claude key you can ask for tailored prompts and answer outlines, and any resume line it quotes is checked against your resume.
 - **Career intelligence.** Charts of what your own searches have shown you: new jobs found per day, average match score, where the jobs are, stated pay bands, remote versus hybrid versus on-site, the skills asked for most (and which you lack), the companies hiring for you, applications by status, how many applications reached an interview, and a comparison of your target roles (for example Data Engineer against BI Developer). Everything is counted from jobs your searches returned and applications you track. It is not the whole market, and the page says so. Each chart is labelled observed or estimate: match scores are the only estimates. Pay counts only what the employer stated in CAD. A conversion rate is withheld until you have sent 5 applications. Sample jobs from demo mode are left out unless you tick a box. Every chart has a table view.
 - **Search history.** Every search is kept in this browser (up to 500 searches and 1,500 jobs, no descriptions), so trends build over days and weeks. Run a search again, delete one, or forget everything. Searches made with no job source connected are not kept.
-- **Cloud sync and a morning run (optional).** Connect your own free Supabase project to sign in, keep your data in step across devices, and have a search run for you every day from 8:00 AM Toronto time. Off by default: without the keys the app is exactly the browser-only app described here. Sync never overwrites a copy it has not seen. The morning run uses rule-based scoring only, so it costs nothing beyond the job-board calls. Setup is below.
+- **Sign-in, cloud sync and a morning run.** Your own free Supabase project signs you in, which is required for searching. Syncing a copy of your data across devices and a search run for you every day from 8:00 AM Toronto time are optional and off by default. Sync never overwrites a copy it has not seen. The morning run uses rule-based scoring only, so it costs nothing beyond the job-board calls.
 - **Career site watchlist.** For government, crown corporation and company career sites that the job boards do not cover. Keep their addresses, choose how often to be reminded, mark each one checked when you have looked, and log a posting you find as an application. Nothing is scraped: the app never reads those sites. A few suggested addresses (Job Bank, the GC Jobs guidance page, Ontario's GOjobs, Canada Post's job portal) are one click to add; they were found through a web search and you should confirm each one opens the page you expect. For any other crown corporation, add the careers page yourself.
 - **HR & Recruiter Finder.** A Find recruiter button on every job (card, details and application) looks for the people publicly tied to hiring for it: names the posting itself states, plus an optional Claude web search. Every person comes with the source that names them and a verification status. Save contacts, track your networking with them (Discovered to Follow-up), schedule follow-ups, and get truthful message drafts. Nothing is ever sent for you. See "HR & Recruiter Finder" below.
 - **Reminders.** The Overview lists follow-ups due, upcoming interviews, application deadlines, expected replies and offer decision dates, from the dates you set. They appear in the app only; nothing is emailed yet.
-- **Honest about its data.** Jobs come only from a connected job board (Adzuna or JSearch). With no job-board key a deployed site shows no jobs and says so. `npm run dev` shows clearly labelled sample jobs for development only. Resume analysis falls back to a keyword engine when there is no Claude key.
+- **Honest about its data.** Jobs come only from a connected job board (Adzuna or JSearch). With no job-board key a deployed site shows no jobs and says so. `npm run dev` shows clearly labelled sample jobs for development only. Resume analysis falls back to a keyword engine when Claude is off.
 - **Built for a permanent full-time search.** The default filter is Permanent full-time with a CAD $100,000 minimum. Jobs that state a lower salary are hidden, jobs that state none stay and are marked Salary unknown, and salaries a job board only estimated never hide a job. Edit your cities, roles and minimum in Settings.
 - **Your data stays yours.** Settings exports and imports a JSON backup. Existing data is snapshotted before any upgrade, and unreadable data is set aside rather than overwritten.
 
 Built with Next.js 16 (App Router), TypeScript, Tailwind CSS 4 and the Anthropic SDK.
+
+## Private by default
+
+This is a personal app with one user. Searching and every other server feature answer only the signed-in owner, and
+stay closed until sign-in is configured. Setup, the order to do it in, and the security report:
+[docs/security-hardening.md](docs/security-hardening.md).
 
 ## Architecture overview
 
@@ -28,25 +34,26 @@ Browser (Next.js client)                          Server (Next.js route handlers
   your data: localStorage  ─────────────────▶  /api/search-jobs      ─▶ Adzuna or JSearch   (only if a job-board key is set)
   (resumes, applications, contacts, history)   /api/analyze-resume,
                                                 /api/job-insights,
-                                                /api/interview-prep   ─▶ Anthropic           (only if ANTHROPIC_API_KEY is set)
-                                                /api/find-recruiter   ─▶ Anthropic web search (only if a key AND RECRUITER_WEB_SEARCH=1 or sign-in is required)
+                                                /api/interview-prep   ─▶ Anthropic           (only with AI_ENABLED=1 and a key)
+                                                /api/find-recruiter   ─▶ Anthropic web search (only with AI on AND RECRUITER_WEB_SEARCH=1)
                                                 /api/status            (reports which features are on; never key values)
   optional: Supabase sign-in + synced copy ◀──▶ /api/cron/daily        ◀─ GitHub Actions at 8:00 AM Toronto (needs CRON_SECRET)
 ```
 
 - **The browser owns your data.** Resumes, applications, contacts, history and settings live in `localStorage`. The server keeps no database and no session of its own.
-- **The server is a thin, stateless layer.** Each route reads its keys from environment variables, calls one outside service when asked, and returns the result. Without a key the route says so instead of inventing data.
+- **The server is a thin layer behind sign-in.** Each route checks that you are the owner, calls one outside service when asked, and returns the result. It stores no resume. Without a key the route says so instead of inventing data.
 - **Everything optional is off by default.** The sections below show what each setting turns on.
 
 ## Modes: what each configuration turns on
 
 | Mode | Settings | What works | What does not |
 | --- | --- | --- | --- |
-| **Local-only (no keys)** | none | Resume profile (keyword engine), match scoring (keyword engine), applications and interviews tracker, career-site watchlist, Find Recruiter in free mode (names, emails and phones the posting prints, plus Google, Bing and LinkedIn search links you open yourself), contacts and networking tracker, backup and import | Live jobs (production shows none and says so; `npm run dev` shows labelled sample jobs), Claude features, cloud sync |
+| **No configuration** | none | Everything that stays in the browser: reading a resume file, the keyword profile, applications, interviews, watchlist, contacts, backup and import | Searching and every other server feature: they are closed without sign-in |
+| **Sign-in (required)** | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `OWNER_USER_ID` | The server features, for you only | Live jobs until a job source is set |
 | **Job source** | `ADZUNA_APP_ID` and `ADZUNA_APP_KEY`, or `RAPIDAPI_KEY` | Live job search. Calls go from the server to the job board | Claude features, cloud sync |
-| **Optional Claude** | `ANTHROPIC_API_KEY` (optionally `ANTHROPIC_MODEL`) | Claude resume reading, match review, tailored suggestions, interview practice, message drafts | Recruiter web search stays off until `RECRUITER_WEB_SEARCH=1` (or sign-in is required) |
-| **Claude recruiter web search** | `ANTHROPIC_API_KEY` and `RECRUITER_WEB_SEARCH=1`, optionally `FIND_RECRUITER_MAX_PER_HOUR` | Find Recruiter also searches the public web and reads public pages. This bills your Anthropic account | LinkedIn and other login-only sites are never read |
-| **Optional Supabase** | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`, `DAILY_RUN_EMAILS`, optionally `DAILY_MAX_SEARCHES`, `DAILY_BUDGET_SECONDS` | Password sign-in, synced copy across devices, the 8:00 AM Toronto morning run. Sign-in becomes required for paid routes | Nothing else changes |
+| **Optional Claude (paid)** | `AI_ENABLED=1` and `ANTHROPIC_API_KEY` (optionally `ANTHROPIC_MODEL`) | Claude resume reading, match review, tailored suggestions, interview practice, message drafts | Recruiter web search stays off until `RECRUITER_WEB_SEARCH=1` |
+| **Claude recruiter web search (paid)** | the above and `RECRUITER_WEB_SEARCH=1`, optionally `FIND_RECRUITER_MAX_PER_HOUR` | Find Recruiter also searches the public web and reads public pages. This bills your Anthropic account | LinkedIn and other login-only sites are never read |
+| **Optional morning run** | `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`, `DAILY_RUN_EMAILS`, optionally `DAILY_MAX_SEARCHES`, `DAILY_BUDGET_SECONDS` | The 8:00 AM Toronto morning run, for the owner | Nothing else changes |
 
 ### Every environment variable, by name
 
@@ -54,6 +61,8 @@ Set these in `.env.local` locally or in Vercel's Environment Variables. Names on
 
 | Variable | Where it is read | Public to the browser? |
 | --- | --- | --- |
+| `OWNER_USER_ID` | Server (the one account allowed in) | No |
+| `AI_ENABLED` | Server (paid features switch) | No |
 | `ANTHROPIC_API_KEY` | Server | No |
 | `ANTHROPIC_MODEL` | Server | No |
 | `ADZUNA_APP_ID`, `ADZUNA_APP_KEY` | Server | No |
@@ -68,9 +77,11 @@ Set these in `.env.local` locally or in Vercel's Environment Variables. Names on
 | `CRON_SECRET` | Server, and a GitHub repository secret of the same name | No |
 | `DAILY_RUN_EMAILS`, `DAILY_MAX_SEARCHES`, `DAILY_BUDGET_SECONDS` | Server (morning run) | No |
 
-GitHub repository secrets used by workflows: `SITE_URL` and `CRON_SECRET` (the morning run only). The CI, CodeQL, dependency-review and deployment-check workflows use no secrets.
+GitHub repository secrets used by workflows: `SITE_URL`, `CRON_SECRET` and, if Vercel protects production, `VERCEL_AUTOMATION_BYPASS_SECRET` (the morning run only). The other workflows use no secrets.
 
 ## Quick start
+
+Searching needs sign-in even on your own machine: put the three sign-in values in `.env.local` (see `.env.example`).
 
 You need Node.js 20.16 or newer (CI uses Node 22).
 
@@ -80,7 +91,7 @@ cp .env.example .env.local   # optional: add your keys
 npm run dev
 ```
 
-Open http://localhost:3000. With no keys the dev server shows sample jobs so you can try the whole app.
+Open http://localhost:3000. Once you are signed in, a dev server with no job-board key shows labelled sample jobs.
 
 | Command | What it does |
 | --- | --- |
@@ -101,22 +112,22 @@ The browser smoke tests start the production build with every optional key blank
 
 | Workflow | Runs on | What it checks |
 | --- | --- | --- |
-| **CI** (`ci.yml`), job *Unit tests, lint, typecheck, build* | Pull requests, pushes to `main` | `npm ci`, `npm test`, `npm run lint`, `npm run typecheck`, `npm run build` on Node 22 with the npm cache |
+| **CI** (`ci.yml`), job *Unit tests, lint, typecheck, build* | Pull requests, pushes to `main` | `npm ci`, `npm test`, `npm run lint`, `npm run typecheck`, `npm run build` with made-up secrets, then a check that none reached the browser files |
 | **CI**, job *Browser smoke tests* | Pull requests, pushes to `main` | `npm ci`, installs Chromium, `npm run build`, `npm run test:e2e`. Uploads the Playwright report only if it fails |
 | **CodeQL** (`codeql.yml`) | Pull requests, pushes to `main`, weekly | Static security analysis of the TypeScript source |
 | **Dependency review** (`dependency-review.yml`) | Pull requests | Fails a pull request that adds a dependency with a known high or critical vulnerability |
-| **Deployment smoke check** (`deployment-smoke.yml`) | A successful Production deployment, or run by hand with a URL | Two plain GET requests: the home page answers and contains the app, and `/api/status` has the expected shape. Never sends a POST, searches for jobs or starts a recruiter lookup |
+| **Deployment smoke check** (`deployment-smoke.yml`) | A successful Production deployment, or run by hand with a URL | Two plain GET requests that confirm a visitor is refused. Never sends a POST |
 | **Morning job run** (`daily-run.yml`) | Daily schedule, by hand | Calls the protected morning-run endpoint (needs the `SITE_URL` and `CRON_SECRET` secrets) |
 
 Dependabot (`dependabot.yml`) opens weekly update pull requests for npm packages and GitHub Actions. Branch protection is a repository setting, not something these files can switch on: to require the CI checks before merging, enable it under Settings, Branches, and select **Unit tests, lint, typecheck, build** and **Browser smoke tests**. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## API keys
 
-Every key is optional. Put them in `.env.local` for local use, or in Vercel's environment variables when deployed. Keys are only read on the server and are never sent to the browser.
+The three sign-in values are required (see "Private by default"); every key below is optional. Put them in `.env.local` for local use, or in Vercel's environment variables when deployed. These keys are only read on the server and are never sent to the browser.
 
 | Variable | Needed for | Where to get it |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | Claude resume analysis and AI match scoring | https://console.anthropic.com/settings/keys |
+| `ANTHROPIC_API_KEY` | Paid Claude features; ignored unless `AI_ENABLED=1` | https://console.anthropic.com/settings/keys |
 | `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` | Live jobs (tried first) | https://developer.adzuna.com/signup |
 | `RAPIDAPI_KEY` | Live jobs through JSearch (used if Adzuna is not set or fails) | https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch |
 | `ANTHROPIC_MODEL` | Optional model override | See below |
@@ -126,7 +137,7 @@ Every key is optional. Put them in `.env.local` for local use, or in Vercel's en
 | Keys set | Resume analysis | Match scores | Jobs |
 | --- | --- | --- | --- |
 | None | Keyword engine | Keyword engine | None in production; sample jobs in `npm run dev` |
-| `ANTHROPIC_API_KEY` | Claude | Claude reviews the top 20 | None in production; sample jobs in `npm run dev` |
+| `AI_ENABLED=1` and `ANTHROPIC_API_KEY` | Claude | Claude reviews the top 20 | None in production; sample jobs in `npm run dev` |
 | Adzuna or RapidAPI | Keyword engine | Keyword engine | Live |
 | Both | Claude | Claude reviews the top 20 | Live |
 
@@ -182,11 +193,11 @@ Scores are guidance about fit. They do not predict hiring decisions.
 
 ## Cloud sync and the morning run
 
-This part is optional and needs a free [Supabase](https://supabase.com) project. Nothing here is created for you: you make the project and put its keys into your own settings. Never paste keys into chat.
+A free [Supabase](https://supabase.com) project provides sign-in, which this app requires; follow [docs/security-hardening.md](docs/security-hardening.md) first, including the second database file. Sync and the morning run described here are optional. Never paste keys into chat.
 
 **What it does**
 
-- **Sync.** After you sign in and turn it on, your resumes (full text), applications, notes, interviews, search history and preferences are copied to a private table in your own Supabase project, and kept in step between devices. Row-level security means only your signed-in account can read or change them.
+- **Sync.** After you sign in and turn it on, your resume text and profile (with email addresses, phone numbers and LinkedIn addresses removed), applications, notes, interviews, search history and preferences are copied to a private table in your own Supabase project, and kept in step between devices. Row-level security means only your signed-in account can read or change them.
 - **It never overwrites what it has not seen.** Every save names the version it started from. If another device saved in the meantime, the two are combined instead (applications and resumes by identity, history by id; the newer copy of an application wins) and a copy of this device's data is kept first under `cmh:backup:pre-sync`. A change made on one device is carried to the other only when the other has not changed; deletions are not carried over by a combine. If the cloud copy disappears, nothing is re-uploaded until you say so.
 - **Morning run.** A scheduled GitHub job calls `/api/cron/daily`. From 8:00 AM Toronto time, once a day, it searches each primary role in two of your cities, rotated so all of them are covered (up to 12 job-board calls, set with `DAILY_MAX_SEARCHES`; the Greater Toronto Area and Toronto are one search, because the job board treats them the same; each call returns at most 50 jobs), scores them with your selected resume by the rules (no Claude calls, no AI cost), and stores the result. Your browser picks it up the next time you open the app, adds it to your search history and shows it on the Overview. Sample data is never used, and a search that failed is not recorded.
 - **No email or push notifications yet.** Those need another service (some are paid), so the results appear in the app only.
@@ -195,7 +206,7 @@ This part is optional and needs a free [Supabase](https://supabase.com) project.
 
 **Setup**
 
-1. Create a project at supabase.com. In **SQL Editor**, paste the contents of `supabase/migrations/0001_init.sql` and run it.
+1. Create a project at supabase.com. In **SQL Editor**, run `supabase/migrations/0001_init.sql`, then `supabase/migrations/0002_owner_only.sql`, then name yourself as owner (the second file's header shows how).
 2. In **Authentication, Users**, choose **Add user** and create your own account with an email and password. (The app has no sign-up screen on purpose.)
 3. In the Supabase dashboard under **Authentication** (the exact menu names change, so look for the sign-in or providers settings), turn **off** "Allow new users to sign up". This stops strangers creating accounts on your project.
 4. In **Project Settings, API**, copy the Project URL, the anon public key and the service_role key.
@@ -215,7 +226,7 @@ This part is optional and needs a free [Supabase](https://supabase.com) project.
 **What it finds, and where from**
 
 1. **The posting itself.** If the posting says "Recruiter: Jane Smith" or "Jane Smith, Talent Acquisition Partner", that is read directly. This is the strongest evidence, it is free, and it runs the first time you open Find recruiter for a job.
-2. **Web search and page reading (optional, off by default, costs money).** Claude runs up to 8 searches from a plan built from the company, the job title and the team that would hire for it (company + title + recruiter, + Talent Acquisition, + Technical Recruiter, + the relevant department, + HR Manager, + Hiring Manager, careers pages, public profile results), reads up to 5 public pages in full (company careers and team pages; LinkedIn and other login-only sites are blocked from being read), and reports several people, not just the first. "Search for more contacts" runs another pass that looks for different people. It stays off until you set `RECRUITER_WEB_SEARCH=1` (or the site has cloud sync configured, which makes sign-in required). An Anthropic key alone does not turn it on, so adding a key for resume analysis cannot quietly open paid searches to every visitor. When enabled, with `ANTHROPIC_API_KEY` set, the button "Search the web for contacts" asks Claude to search the public web with Anthropic's web search tool, up to 4 searches per lookup. Anthropic charges per search plus the normal usage; I have not verified current prices, so check Anthropic's pricing before using it. Web search may also need to be enabled for your Anthropic organisation in the Anthropic Console. The result is saved per job, so reopening a job does not search again.
+2. **Web search and page reading (optional, off by default, costs money).** Claude runs up to 8 searches from a plan built from the company, the job title and the team that would hire for it (company + title + recruiter, + Talent Acquisition, + Technical Recruiter, + the relevant department, + HR Manager, + Hiring Manager, careers pages, public profile results), reads up to 5 public pages in full (company careers and team pages; LinkedIn and other login-only sites are blocked from being read), and reports several people, not just the first. "Search for more contacts" runs another pass that looks for different people. It stays off until `AI_ENABLED=1` and `RECRUITER_WEB_SEARCH=1` are both set; an Anthropic key alone does not turn it on. When enabled, with `ANTHROPIC_API_KEY` set, the button "Search the web for contacts" asks Claude to search the public web with Anthropic's web search tool, up to 4 searches per lookup. Anthropic charges per search plus the normal usage; I have not verified current prices, so check Anthropic's pricing before using it. Web search may also need to be enabled for your Anthropic organisation in the Anthropic Console. The result is saved per job, so reopening a job does not search again.
 3. **You.** Add anyone you found yourself, with where you found them. They are recorded as added by you and stay a "possible match" until you mark them verified.
 4. **Search links.** Links open Google, Bing and LinkedIn searches in your own browser: recruiter for this job, talent acquisition, hiring manager, the likely hiring department, and the company careers page. They are plain searches you open yourself. The app never visits, reads or scrapes those pages, and never builds a profile address.
 
@@ -248,7 +259,7 @@ This part is optional and needs a free [Supabase](https://supabase.com) project.
 
 **Your data.** Contacts are saved in this browser, included in backups and cloud sync, and can be edited or deleted. Deleting is permanent and is remembered so syncing another device cannot bring a contact back. Contacts hold only public professional details plus your own notes and history. Use them responsibly: contact people in line with the site's rules and the law (for example anti-spam rules for commercial email).
 
-**Cost and abuse protection.** The lookup route is rate limited per visitor and per hour per server instance (`FIND_RECRUITER_MAX_PER_HOUR`, default 20). If cloud sync is configured on the site, you must be signed in (and on the `DAILY_RUN_EMAILS` list, if set) to run a web lookup; web lookups are also off unless `RECRUITER_WEB_SEARCH=1` is set. AI drafts need sign-in too when cloud sync is configured, and otherwise are limited only by rate limits, like the other Claude features. Sample (demo) jobs never trigger a search.
+**Cost and abuse protection.** The lookup route requires the signed-in owner and is limited per minute and per hour, counted both in each server instance and in the database. Sample (demo) jobs never trigger a search.
 
 **Messages.** The networking assistant writes a LinkedIn connection note (kept under 300 characters, LinkedIn's usual limit for a note; check yours), an introduction, a follow-up and an email. It uses your selected resume and the job. It says you applied only if an application date is recorded, refers to earlier contact only if you recorded it, and mentions only skills on your resume that the posting asks for. AI-written drafts are checked the same way and thrown away if they claim anything unsupported. You copy a draft or open it in your email app, and you press "I sent this" yourself to record it. Placeholders like [Your name] are left for you to fill in.
 
@@ -257,15 +268,15 @@ This part is optional and needs a free [Supabase](https://supabase.com) project.
 ## Privacy
 
 - By default your resume versions, profiles, filters, results and saved jobs live only in your browser's `localStorage`. Nothing is stored on the server and there is no database.
-- **If you turn on cloud sync**, a copy of your resumes (full text), applications, notes, interviews, search history and preferences is stored in your own Supabase project, behind row-level security. The service key that the morning run uses exists only on the server and is read in one server-only file. Anyone with access to your Supabase project, Vercel project or GitHub secrets can see or use those things, so protect those accounts.
+- **If you turn on cloud sync**, a copy of your resume text and profile (with email addresses, phone numbers and LinkedIn addresses removed; your own notes, cover letters and contacts are copied in full), applications, notes, interviews, search history and preferences is stored in your own Supabase project, behind row-level security. The service key that the morning run uses exists only on the server and is read in one server-only file. Anyone with access to your Supabase project, Vercel project or GitHub secrets can see or use those things, so protect those accounts.
 - Tailored suggestions and interview practice are sent to Anthropic only when you press the button: the posting and your resume text. The result is cached in this browser (the last 20 jobs) so it is not requested again.
 - Search history is stored under its own key and is part of the JSON backup. It holds only compact notes of jobs seen (title, company, location, stated pay, score, skills), not descriptions. Entries that cannot be read are set aside like applications.
 - Applications load one at a time: if one entry cannot be read, the rest still load, and the damaged one is set aside. Settings lets you download what was set aside.
 - Applications are stored under their own key. The upgrade copies your earlier saved jobs there and leaves the old copy untouched, so returning to the previous release still shows them.
 - Upgrades save a snapshot of your previous data in the same browser storage, and keep the old single-resume copy so you can return to the previous release without losing anything. Those copies include your old resume text. Settings has a button to delete them once you are happy.
-- Uploaded files are parsed in memory on the server and discarded.
-- With `ANTHROPIC_API_KEY` set, your resume text and the job postings in view are sent to Anthropic for analysis and scoring.
-- Anyone who can open a deployed copy can use your API keys through it. Add a Vercel Firewall rate-limit rule, or Vercel Deployment Protection, if the site is public. The app has a small per-instance rate limit, but it resets whenever a serverless instance restarts.
+- Resume files are read in your browser and never uploaded or stored. The text is sent to your server when you search, for scoring, and is not kept there.
+- With AI switched on (`AI_ENABLED=1` and a key), your resume text and the job postings in view are sent to Anthropic for analysis and scoring.
+- Only the signed-in owner can use the server, so only you can spend your job-board quota or any Anthropic credit. Turn on Vercel Deployment Protection as well, so the page itself is not public.
 
 ### Privacy boundaries and external services
 
@@ -274,7 +285,7 @@ What the app contacts, and when. Anything not listed here is never contacted.
 | Service | Contacted when | What is sent |
 | --- | --- | --- |
 | Adzuna or JSearch (RapidAPI) | You press Search jobs, or the morning run starts, and a job-board key is set | Your job title, city and filters. Not your resume |
-| Anthropic | You press an AI button and `ANTHROPIC_API_KEY` is set | The posting and your resume text for that action |
+| Anthropic | You press an AI button and AI is switched on | The posting and your resume text for that action |
 | Anthropic web search and page reading | You press "Search the web for contacts" and recruiter web search is enabled | The company, job title, location and the start of the posting. Not your resume |
 | Supabase | Cloud sync is configured and you are signed in | Your synced data, into your own project |
 | Google, Bing, LinkedIn | **Only when you click a search link yourself**, in your own browser | Nothing from this app. The app never opens, reads or scrapes those pages |
@@ -305,7 +316,7 @@ git push -u origin main
 
 **One click:** https://vercel.com/new/clone?repository-url=https://github.com/mushahidur-lgtm/career-match-hub
 
-The link deploys with no keys, so the site finds no jobs until you add a job-board key. Add keys afterwards under Project Settings, Environment Variables, then redeploy.
+The link deploys with no configuration, so every server feature is closed. Follow [docs/security-hardening.md](docs/security-hardening.md), then redeploy.
 
 **Or from the dashboard:**
 
@@ -318,7 +329,7 @@ The link deploys with no keys, so the site finds no jobs until you add a job-boa
 
 Notes for Vercel:
 
-- Uploads are limited to 4 MB, below Vercel's 4.5 MB request body limit.
+- Resume files are limited to 4 MB.
 - The analysis and search routes allow up to 120 seconds (`maxDuration` in their `route.ts` files). If your plan caps functions lower, reduce that number.
 - After adding or changing environment variables, redeploy so they take effect.
 
@@ -333,7 +344,6 @@ src/
     page.tsx                      Page coordination, state, persistence
     layout.tsx, globals.css       Fonts, color tokens, dark mode
     api/
-      parse-resume/route.ts       PDF, DOCX, TXT and MD text extraction
       analyze-resume/route.ts     Claude profile extraction, keyword fallback
       search-jobs/route.ts        Provider search, filtering, AI match scoring
       job-insights/route.ts       Tailored resume suggestions, checked against the resume
@@ -394,7 +404,7 @@ src/
 - **Banner says no job source is connected after adding keys.** Restart `npm run dev` so the new environment is loaded. If a live search failed, the results page shows the reason above the list.
 - **"The Anthropic API key was rejected."** Check `ANTHROPIC_API_KEY` for stray spaces or quotes.
 - **Claude requests go somewhere unexpected.** The Anthropic SDK honours an `ANTHROPIC_BASE_URL` environment variable. If one is set in your shell or tooling, requests go there instead of to Anthropic. Unset it to use the default endpoint.
-- **Recruiter discovery is disabled, or "Search the web for contacts" is missing.** Free mode is the default and is not an error: Find Recruiter still reads names printed in the posting and gives you search links. The web search button appears only when all of these are true: `ANTHROPIC_API_KEY` is set, and either `RECRUITER_WEB_SEARCH=1` is set or cloud sync is configured (which makes sign-in required), and you redeployed after setting them. Check `/api/status` on your site: `ai` must be `true` and `recruiterWebSearch` must be `true`. Other causes: Web search is not enabled for your Anthropic organisation in the Anthropic Console (the lookup fails with a clear message); you have reached `FIND_RECRUITER_MAX_PER_HOUR` or the per-visitor limit (3 per minute, 12 per hour); the job is a sample job or the posting does not name the employer ("Company not listed"), which are never searched; or you are not signed in on a site that requires sign-in.
+- **Recruiter discovery is disabled, or "Search the web for contacts" is missing.** Free mode is the default and is not an error: Find Recruiter still reads names printed in the posting and gives you search links. The web search button appears only when `AI_ENABLED=1`, `ANTHROPIC_API_KEY` and `RECRUITER_WEB_SEARCH=1` are all set, you redeployed, and you are signed in. Other causes: web search is not enabled for your Anthropic organisation; you have reached a lookup limit (3 per minute, 12 per hour, `FIND_RECRUITER_MAX_PER_HOUR`); the job is a sample job or does not name the employer.
 - **Find Recruiter shows nobody even though a recruiter exists.** Job boards often return only part of a posting (Adzuna returns 500 characters), so a name further down is not seen. The panel says when the description is partial and links to the full posting. Names on pages that need JavaScript or a login cannot be read.
 - **The browser smoke tests fail locally.** Run `npm run build` first (they test the production build), install the browser once with `npm run test:e2e:install` or set `PW_CHANNEL=chrome`, and make sure port 3100 is free. A failure that says the app "tried to reach an outside host" means a code change added a network call: that is the test doing its job.
 - **A console warning says the model is deprecated.** That is the SDK noting that `claude-sonnet-4-5` retires on 2026-11-30. Set `ANTHROPIC_MODEL=claude-sonnet-5-5` to move off it.
